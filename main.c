@@ -1,8 +1,10 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <string.h>
+#include <inttypes.h>
 
 typedef enum {
     TK_LPAREN,
@@ -15,7 +17,7 @@ typedef enum {
     TK_INT,
     TK_STRING,
     TK_KWSYMBOL,
-    TK_SYMBOL,
+    TK_SYMBOL
 } token_type;
 
 typedef struct {
@@ -34,6 +36,122 @@ typedef struct {
     int line;
     int column;
 } lex_state;
+
+typedef enum {
+    T_CONS,
+    T_STRING,
+    T_INT,
+    T_FUNC,
+    T_NATIVE_FUNC
+} risp_type;
+
+struct risp_object;
+
+typedef struct risp_object *(*risp_native_func)(struct risp_object *);
+
+typedef struct risp_object {
+    risp_type type;
+    size_t size;                // should be pow of 8
+    struct risp_object *forwarding;
+    union {
+        struct {
+            struct risp_object *car;
+            struct risp_object *cdr;
+        } cons;
+        uint8_t str[0];
+        uint64_t integer;
+        struct {
+            struct risp_object *body;
+            struct risp_object *arglist;
+            uint32_t level;
+        } func;
+        struct {
+            risp_native_func func;
+            uint64_t nargs;
+        } native_func;
+    } d;
+} risp_object;
+
+typedef struct risp_vars {
+    struct risp_object *vars;   // alist of symbol and its value.
+    struct risp_vars *parent;
+    struct risp_vars *prev;
+} risp_vars;
+
+typedef struct {
+    void *heap;
+    size_t heap_len;
+    size_t heap_cap;
+    risp_vars *var_list;        // last element of variable list
+} risp_env;
+
+static inline size_t copy_object(risp_object *free_ptr, risp_object *old_obj) {
+    memcpy(free_ptr, old_obj, old_obj->size);
+    old_obj->forwarding = free_ptr;
+    return old_obj->size;
+}
+
+static void run_gc(risp_env *env) {
+    void *new_heap = malloc(env->heap_cap);
+    size_t new_len = 0;
+    risp_object *free_ptr = new_heap;
+
+    for (risp_vars *vars = env->var_list; vars != NULL; vars = vars->prev) {
+        for (risp_object *cons = vars->vars; cons != NULL; cons = cons->d.cons.cdr) {
+            assert(cons->type == T_CONS);
+            assert(cons->forwarding == NULL);
+
+            new_len += copy_object(free_ptr, cons->d.cons.car);
+            cons->d.cons.car = free_ptr;
+            free_ptr = new_heap + new_len;
+        }
+    }
+
+    risp_object *scan_ptr = new_heap;
+    while (scan_ptr < free_ptr) {
+        switch (scan_ptr->type) {
+        case T_CONS:
+            if (scan_ptr->d.cons.car->forwarding == NULL) {
+                new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
+                scan_ptr->d.cons.car = free_ptr;
+                free_ptr = new_heap + new_len;
+            } else {
+                scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
+            }
+            if (scan_ptr->d.cons.cdr->forwarding == NULL) {
+                new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
+                scan_ptr->d.cons.cdr = free_ptr;
+                free_ptr = new_heap + new_len;
+            } else {
+                scan_ptr->d.cons.cdr = scan_ptr->d.cons.cdr->forwarding;
+            }
+            break;
+
+        case T_STRING:
+            break;
+
+        case T_INT:
+            break;
+
+        case T_FUNC:
+            if (scan_ptr->d.func.arglist->forwarding == NULL) {
+                new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
+                scan_ptr->d.func.arglist = free_ptr;
+                free_ptr = new_heap + new_len;
+            } else {
+                scan_ptr->d.func.arglist = scan_ptr->d.func.arglist->forwarding;
+            }
+            break;
+
+        case T_NATIVE_FUNC:
+            break;
+        }
+    }
+
+    free(env->heap);
+    env->heap = new_heap;
+    env->heap_len = new_len;
+}
 
 static void token_type_print(token_type type, FILE *out) {
     char const *repr;
