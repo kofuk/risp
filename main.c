@@ -87,11 +87,18 @@ typedef struct risp_vars {
     struct risp_vars *prev;
 } risp_vars;
 
+// risp_eobject is a wrapper for risp_object to avoid ephemeral objects to be freed and keep track of them.
+typedef struct risp_eobject {
+    risp_object *o;
+    struct risp_eobject *next;
+} risp_eobject;
+
 struct risp_env {
     void *heap;
     usize heap_len;
     usize heap_cap;
     risp_vars *var_list;        // last element of variable list
+    risp_eobject *ephemeral;
 };
 
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
@@ -105,14 +112,23 @@ static void run_gc(risp_env *env) {
     usize new_len = 0;
     risp_object *free_ptr = new_heap;
 
-    for (risp_vars *vars = env->var_list; vars != NULL; vars = vars->prev) {
-        for (risp_object *cons = vars->vars; cons != NULL; cons = cons->d.cons.cdr) {
-            assert(cons->type == T_CONS);
-            assert(cons->forwarding == NULL);
-
-            new_len += copy_object(free_ptr, cons->d.cons.car);
-            cons->d.cons.car = free_ptr;
+    for (risp_eobject *eo = env->ephemeral; eo; eo = eo->next) {
+        if (eo->o->forwarding == NULL) {
+            new_len += copy_object(free_ptr, eo->o);
+            eo->o = free_ptr;
             free_ptr = new_heap + new_len;
+        } else {
+            eo->o = eo->o->forwarding;
+        }
+    }
+
+    for (risp_vars *vars = env->var_list; vars != NULL; vars = vars->prev) {
+        if (vars->vars->forwarding == NULL) {
+            new_len += copy_object(free_ptr, vars->vars);
+            vars->vars = free_ptr;
+            free_ptr = new_heap + new_len;
+        } else {
+            vars->vars = vars->vars->forwarding;
         }
     }
 
@@ -165,6 +181,28 @@ static void run_gc(risp_env *env) {
     env->heap_len = new_len;
 }
 
+static risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj) {
+    risp_eobject *eo = malloc(sizeof(risp_eobject));
+    eo->o = obj;
+    eo->next = env->ephemeral;
+    return eo;
+}
+
+static void unregister_ephemeral_object(risp_env *env, risp_eobject *registered) {
+    for (risp_eobject *eo = env->ephemeral, *prev = NULL; eo; eo = eo->next) {
+        if (eo == registered) {
+            if (prev == NULL) {
+                env->ephemeral = eo;
+            } else {
+                prev->next = eo->next;
+            }
+            free(registered);
+            return;
+        }
+        prev = eo;
+    }
+}
+
 static inline usize align_to_word(usize size) {
     return (size + sizeof(void *)) & ~(sizeof(void *) - 1);
 }
@@ -193,7 +231,7 @@ static void ensure_allocatable(risp_env *env, usize size) {
     run_gc(env);
 }
 
-static risp_object *alloc_string(risp_env *env, usize len) {
+static risp_object *alloc_str_like(risp_env *env, usize len) {
     usize str_offset = offsetof(risp_object, d.str_like);
     usize alloc_size;
     if (sizeof(risp_object) - str_offset <= len) {
@@ -249,18 +287,13 @@ static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
 static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
     assert(symbol->type == T_SYMBOL);
 
-    usize sym_len = str_like_len(symbol);
-
     for (risp_vars *target = env->var_list; target; target = target->parent) {
         for (risp_object *vars = target->vars; vars; vars = vars->d.cons.cdr) {
             assert(vars->type == T_CONS);
             assert(vars->d.cons.car->type == T_SYMBOL);
 
-            usize len = str_like_len(vars->d.cons.car);
-            if (sym_len == len) {
-                if (!memcmp(symbol->d.str_like, vars->d.cons.car->d.str_like, len)) {
-                    return vars;
-                }
+            if (symbol == vars->d.cons.car) {
+                return vars;
             }
         }
     }
@@ -276,10 +309,8 @@ static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     return cons->d.cons.cdr;
 }
 
-static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value) {
-    assert(symbol->size == T_SYMBOL);
-
-    usize sym_len = str_like_len(symbol);
+static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
+    assert(symbol->o->size == T_SYMBOL);
 
     risp_object *tail = NULL;
     for (risp_object *var = vars->vars; var; var = var->d.cons.cdr) {
@@ -288,38 +319,37 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, r
 
         tail = var;
 
-        usize len = str_like_len(var->d.cons.car);
-        if (sym_len == len) {
-            if (!memcmp(symbol->d.str_like, var->d.cons.car->d.str_like, len)) {
-                var->d.cons.cdr = value;
-                return;
-            }
+        if (symbol->o == var->d.cons.car) {
+            var->d.cons.cdr = value->o;
+            return;
         }
     }
 
-    risp_object *list_element = alloc_object(env);
-    list_element->type = T_CONS;
-    list_element->d.cons.cdr = NULL;
+    risp_eobject *list_element = register_ephemeral_object(env, alloc_object(env));
+    list_element->o->type = T_CONS;
+    list_element->o->d.cons.cdr = NULL;
 
     risp_object *cons = alloc_object(env);
     cons->type = T_CONS;
-    cons->d.cons.car = symbol;
-    cons->d.cons.cdr = value;
+    cons->d.cons.car = symbol->o;
+    cons->d.cons.cdr = value->o;
 
-    list_element->d.cons.car = cons;
+    list_element->o->d.cons.car = cons;
 
     if (tail == NULL) {
-        vars->vars = list_element;
+        vars->vars = list_element->o;
     } else {
-        tail->d.cons.cdr = list_element;
+        tail->d.cons.cdr = list_element->o;
     }
+
+    unregister_ephemeral_object(env, list_element);
 }
 
-static void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value) {
+static void make_local_variable(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
     make_variable(env, env->var_list, symbol, value);
 }
 
-static void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value) {
+static void make_global_variable(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
     risp_vars *vars = env->var_list;
     while (vars->prev) {
         vars = vars->prev;
@@ -328,13 +358,13 @@ static void make_global_variable(risp_env *env, risp_object *symbol, risp_object
     make_variable(env, vars, symbol, value);
 }
 
-static void scoped_set(risp_env *env, risp_object *symbol, risp_object *value) {
-    risp_object *cons = lookup_variable_cons(env, symbol);
+static void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
+    risp_object *cons = lookup_variable_cons(env, symbol->o);
     if (cons == NULL) {
         make_global_variable(env, symbol, value);
         return;
     }
-    cons->d.cons.cdr = value;
+    cons->d.cons.cdr = value->o;
 }
 
 static void token_type_print(token_type type, FILE *out) {
