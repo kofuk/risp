@@ -99,6 +99,7 @@ struct risp_env {
     usize heap_cap;
     risp_vars *var_list;        // last element of variable list
     risp_eobject *ephemeral;
+    risp_object *obarray;       // interned symbols
 };
 
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
@@ -129,6 +130,16 @@ static void run_gc(risp_env *env) {
             free_ptr = new_heap + new_len;
         } else {
             vars->vars = vars->vars->forwarding;
+        }
+    }
+
+    if (env->obarray != NULL) {
+        if (env->obarray->forwarding == NULL) {
+            new_len += copy_object(free_ptr, env->obarray);
+            env->obarray = free_ptr;
+            free_ptr = new_heap + new_len;
+        } else {
+            env->obarray = env->obarray->forwarding;
         }
     }
 
@@ -365,6 +376,38 @@ static void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value)
         return;
     }
     cons->d.cons.cdr = value->o;
+}
+
+static risp_object *intern_symbol(risp_env *env, char *name) {
+    usize name_len = strlen(name);
+
+    if (env->obarray != NULL) {
+        for (risp_object *obj = env->obarray; obj; obj = obj->d.cons.cdr) {
+            assert(obj->type == T_CONS);
+
+            risp_object *sym = obj->d.cons.car;
+            assert(sym->type == T_SYMBOL);
+
+            if (str_like_len(sym) == name_len) {
+                if (!memcmp(sym->d.str_like, name, name_len)) {
+                    return sym;
+                }
+            }
+        }
+    }
+
+    risp_eobject *cons = register_ephemeral_object(env, alloc_object(env));
+    cons->o->type = T_CONS;
+    cons->o->d.cons.cdr = env->obarray;
+
+    risp_object *sym = alloc_str_like(env, name_len);
+    sym->type = T_SYMBOL;
+    memcpy(sym->d.str_like, name, name_len);
+    cons->o->d.cons.car = sym;
+
+    unregister_ephemeral_object(env, cons);
+
+    return sym;
 }
 
 static void token_type_print(token_type type, FILE *out) {
