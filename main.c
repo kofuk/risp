@@ -67,7 +67,7 @@ struct risp_object {
             struct risp_object *car;
             struct risp_object *cdr;
         } cons;
-        u8 str[0];
+        u8 str_like[0];
         i64 integer;
         struct {
             struct risp_object *body;
@@ -194,7 +194,7 @@ static void ensure_allocatable(risp_env *env, usize size) {
 }
 
 static risp_object *alloc_string(risp_env *env, usize len) {
-    usize str_offset = offsetof(risp_object, d.str);
+    usize str_offset = offsetof(risp_object, d.str_like);
     usize alloc_size;
     if (sizeof(risp_object) - str_offset <= len) {
         alloc_size = align_to_word(sizeof(risp_object));
@@ -205,6 +205,8 @@ static risp_object *alloc_string(risp_env *env, usize len) {
     ensure_allocatable(env, alloc_size);
 
     risp_object *r = env->heap + env->heap_len;
+    r->size = alloc_size;
+    r->forwarding = NULL;
     env->heap_len += alloc_size;
     return r;
 }
@@ -214,8 +216,125 @@ static risp_object *alloc_object(risp_env *env) {
     ensure_allocatable(env, size);
 
     risp_object *r = env->heap + env->heap_len;
+    r->size = size;
+    r->forwarding = NULL;
     env->heap_len += size;
     return r;
+}
+
+static usize str_like_len(risp_object *obj) {
+    assert(obj->type == T_STRING || obj->type == T_SYMBOL);
+    return obj->size - offsetof(risp_object, d.str_like);
+}
+
+static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
+    risp_vars *parent_scope;
+
+    if (caller_level < callee_level) {
+        parent_scope = env->var_list;
+    } else {
+        u32 diff = caller_level - callee_level;
+        parent_scope = env->var_list;
+        for (u32 i = 0; i <= diff; ++i) {
+            parent_scope = parent_scope->parent;
+        }
+    }
+
+    risp_vars *vars = malloc(sizeof(risp_vars));
+    vars->parent = parent_scope;
+    vars->prev = env->var_list;
+    env->var_list = vars;
+}
+
+static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
+    assert(symbol->type == T_SYMBOL);
+
+    usize sym_len = str_like_len(symbol);
+
+    for (risp_vars *target = env->var_list; target; target = target->parent) {
+        for (risp_object *vars = target->vars; vars; vars = vars->d.cons.cdr) {
+            assert(vars->type == T_CONS);
+            assert(vars->d.cons.car->type == T_SYMBOL);
+
+            usize len = str_like_len(vars->d.cons.car);
+            if (sym_len == len) {
+                if (!memcmp(symbol->d.str_like, vars->d.cons.car->d.str_like, len)) {
+                    return vars;
+                }
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
+    risp_object *cons = lookup_variable_cons(env, symbol);
+    if (cons == NULL) {
+        return NULL;
+    }
+    return cons->d.cons.cdr;
+}
+
+static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value) {
+    assert(symbol->size == T_SYMBOL);
+
+    usize sym_len = str_like_len(symbol);
+
+    risp_object *tail = NULL;
+    for (risp_object *var = vars->vars; var; var = var->d.cons.cdr) {
+        assert(var->type == T_CONS);
+        assert(var->d.cons.car->type == T_SYMBOL);
+
+        tail = var;
+
+        usize len = str_like_len(var->d.cons.car);
+        if (sym_len == len) {
+            if (!memcmp(symbol->d.str_like, var->d.cons.car->d.str_like, len)) {
+                var->d.cons.cdr = value;
+                return;
+            }
+        }
+    }
+
+    risp_object *list_element = alloc_object(env);
+    list_element->type = T_CONS;
+    list_element->d.cons.cdr = NULL;
+
+    risp_object *cons = alloc_object(env);
+    cons->type = T_CONS;
+    cons->d.cons.car = symbol;
+    cons->d.cons.cdr = value;
+
+    list_element->d.cons.car = cons;
+
+    if (tail == NULL) {
+        vars->vars = list_element;
+    } else {
+        tail->d.cons.cdr = list_element;
+    }
+}
+
+static void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value) {
+    make_variable(env, env->var_list, symbol, value);
+}
+
+static void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value) {
+    risp_vars *vars = env->var_list;
+    while (vars->prev) {
+        vars = vars->prev;
+    }
+
+    make_variable(env, vars, symbol, value);
+}
+
+static void scoped_set(risp_env *env, risp_object *symbol, risp_object *value) {
+    risp_object *cons = lookup_variable_cons(env, symbol);
+    if (cons == NULL) {
+        make_global_variable(env, symbol, value);
+        return;
+    }
+    cons->d.cons.cdr = value;
 }
 
 static void token_type_print(token_type type, FILE *out) {
