@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stddef.h>
 
 typedef enum {
     TK_LPAREN,
@@ -40,6 +41,7 @@ typedef struct {
 typedef enum {
     T_CONS,
     T_STRING,
+    T_SYMBOL,
     T_INT,
     T_FUNC,
     T_NATIVE_FUNC
@@ -51,7 +53,7 @@ typedef struct risp_object *(*risp_native_func)(struct risp_object *);
 
 typedef struct risp_object {
     risp_type type;
-    size_t size;                // should be pow of 8
+    size_t size;                // should be pow of sizeof(void *)
     struct risp_object *forwarding;
     union {
         struct {
@@ -102,6 +104,7 @@ static void run_gc(risp_env *env) {
             assert(cons->forwarding == NULL);
 
             new_len += copy_object(free_ptr, cons->d.cons.car);
+            cons->d.cons.car->forwarding = free_ptr;
             cons->d.cons.car = free_ptr;
             free_ptr = new_heap + new_len;
         }
@@ -113,13 +116,15 @@ static void run_gc(risp_env *env) {
         case T_CONS:
             if (scan_ptr->d.cons.car->forwarding == NULL) {
                 new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
+                scan_ptr->d.cons.car->forwarding = free_ptr;
                 scan_ptr->d.cons.car = free_ptr;
                 free_ptr = new_heap + new_len;
             } else {
                 scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
             }
             if (scan_ptr->d.cons.cdr->forwarding == NULL) {
-                new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
+                new_len += copy_object(free_ptr, scan_ptr->d.cons.cdr);
+                scan_ptr->d.cons.cdr->forwarding = free_ptr;
                 scan_ptr->d.cons.cdr = free_ptr;
                 free_ptr = new_heap + new_len;
             } else {
@@ -130,12 +135,16 @@ static void run_gc(risp_env *env) {
         case T_STRING:
             break;
 
+        case T_SYMBOL:
+            break;
+
         case T_INT:
             break;
 
         case T_FUNC:
             if (scan_ptr->d.func.arglist->forwarding == NULL) {
                 new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
+                scan_ptr->d.cons.car->forwarding = free_ptr;
                 scan_ptr->d.func.arglist = free_ptr;
                 free_ptr = new_heap + new_len;
             } else {
@@ -151,6 +160,59 @@ static void run_gc(risp_env *env) {
     free(env->heap);
     env->heap = new_heap;
     env->heap_len = new_len;
+}
+
+static inline size_t align_to_word(size_t size) {
+    return (size + sizeof(void *)) & ~(sizeof(void *) - 1);
+}
+
+static void ensure_allocatable(risp_env *env, size_t size) {
+    if (env->heap_cap - env->heap_len >= size) {
+        return;
+    }
+
+    //TODO: more efficient way.
+
+    run_gc(env);
+    if (env->heap_cap - env->heap_len >= size) {
+        return;
+    }
+
+    size_t required_cap = env->heap_cap << 1;
+    for (;;) {
+        if (required_cap - env->heap_len >= size) {
+            break;
+        }
+        required_cap <<= 1;
+    }
+
+    env->heap_cap = required_cap;
+    run_gc(env);
+}
+
+static risp_object *alloc_string(risp_env *env, size_t len) {
+    size_t str_offset = offsetof(risp_object, d.str);
+    size_t alloc_size;
+    if (sizeof(risp_object) - str_offset <= len) {
+        alloc_size = align_to_word(sizeof(risp_object));
+    } else {
+        alloc_size = align_to_word(str_offset + len);
+    }
+
+    ensure_allocatable(env, alloc_size);
+
+    risp_object *r = env->heap + env->heap_len;
+    env->heap_len += alloc_size;
+    return r;
+}
+
+static risp_object *alloc_object(risp_env *env) {
+    size_t size = align_to_word(sizeof(risp_object));
+    ensure_allocatable(env, size);
+
+    risp_object *r = env->heap + env->heap_len;
+    env->heap_len += size;
+    return r;
 }
 
 static void token_type_print(token_type type, FILE *out) {
