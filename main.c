@@ -9,6 +9,7 @@
 
 typedef uint8_t u8;
 typedef uint32_t u32;
+typedef int32_t i32;
 typedef uint64_t u64;
 typedef int64_t i64;
 typedef size_t usize;
@@ -44,10 +45,17 @@ typedef struct {
     int column;
 } lex_state;
 
+typedef struct {
+    char *in_name;
+    FILE *infile;
+    lex_state *state;
+} lexer;
+
 typedef enum {
-    T_CONS,
+    T_CONS = 1,
     T_STRING,
     T_SYMBOL,
+    T_KWSYMBOL,
     T_INT,
     T_FUNC,
     T_NATIVE_FUNC
@@ -67,17 +75,17 @@ struct risp_object {
             struct risp_object *car;
             struct risp_object *cdr;
         } cons;
-        u8 str_like[0];
+        struct {
+            usize len;
+            u8 s[0];
+        } str_like;
         i64 integer;
         struct {
             struct risp_object *body;
             struct risp_object *arglist;
             u32 level;
         } func;
-        struct {
-            risp_native_func func;
-            u64 nargs;
-        } native_func;
+        risp_native_func native_func;
     } d;
 };
 
@@ -100,6 +108,7 @@ struct risp_env {
     risp_vars *var_list;        // last element of variable list
     risp_eobject *ephemeral;
     risp_object *obarray;       // interned symbols
+    risp_object *error;
 };
 
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
@@ -130,6 +139,16 @@ static void run_gc(risp_env *env) {
             free_ptr = new_heap + new_len;
         } else {
             vars->vars = vars->vars->forwarding;
+        }
+    }
+
+    if (env->error != NULL) {
+        if (env->error->forwarding == NULL) {
+            new_len += copy_object(free_ptr, env->error);
+            env->error = free_ptr;
+            free_ptr = new_heap + new_len;
+        } else {
+            env->error = env->error->forwarding;
         }
     }
 
@@ -167,6 +186,9 @@ static void run_gc(risp_env *env) {
             break;
 
         case T_SYMBOL:
+            break;
+
+        case T_KWSYMBOL:
             break;
 
         case T_INT:
@@ -214,8 +236,23 @@ static void unregister_ephemeral_object(risp_env *env, risp_eobject *registered)
     }
 }
 
+static void ephemeral_object_free_all(risp_env *env) {
+    for (risp_eobject *eo = env->ephemeral, *next; eo; eo = next) {
+        next = eo->next;
+        free(eo);
+    }
+}
+
+static risp_object *get_error(risp_env *env) {
+    return env->error;
+}
+
+static void clear_error(risp_env *env) {
+    env->error = NULL;
+}
+
 static inline usize align_to_word(usize size) {
-    return (size + sizeof(void *)) & ~(sizeof(void *) - 1);
+    return (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 }
 
 static void ensure_allocatable(risp_env *env, usize size) {
@@ -243,9 +280,9 @@ static void ensure_allocatable(risp_env *env, usize size) {
 }
 
 static risp_object *alloc_str_like(risp_env *env, usize len) {
-    usize str_offset = offsetof(risp_object, d.str_like);
+    usize str_offset = offsetof(risp_object, d.str_like.s);
     usize alloc_size;
-    if (sizeof(risp_object) - str_offset <= len) {
+    if (len <= sizeof(risp_object) - str_offset) {
         alloc_size = align_to_word(sizeof(risp_object));
     } else {
         alloc_size = align_to_word(str_offset + len);
@@ -256,6 +293,7 @@ static risp_object *alloc_str_like(risp_env *env, usize len) {
     risp_object *r = env->heap + env->heap_len;
     r->size = alloc_size;
     r->forwarding = NULL;
+    r->d.str_like.len = len;
     env->heap_len += alloc_size;
     return r;
 }
@@ -271,9 +309,17 @@ static risp_object *alloc_object(risp_env *env) {
     return r;
 }
 
-static usize str_like_len(risp_object *obj) {
-    assert(obj->type == T_STRING || obj->type == T_SYMBOL);
-    return obj->size - offsetof(risp_object, d.str_like);
+static void signal_error(risp_env *env, risp_object *err) {
+    env->error = err;
+}
+
+static void signal_error_s(risp_env *env, const char *msg) {
+    size_t len = strlen(msg);
+    risp_object *err = alloc_str_like(env, len);
+    err->type = T_STRING;
+    memcpy(err->d.str_like.s, msg, len);
+    err->d.str_like.len = len;
+    signal_error(env, err);
 }
 
 static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
@@ -295,16 +341,30 @@ static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     env->var_list = vars;
 }
 
+static void env_init(risp_env *env) {
+    env->heap_len = 0;
+    env->heap_cap = 64 * 1024 * 1024;
+    env->heap = malloc(env->heap_cap);
+    env->var_list = NULL;
+    env->ephemeral = NULL;
+    env->obarray = NULL;
+    env->error = NULL;
+
+    push_frame(env, 0, 1);
+}
+
 static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
     assert(symbol->type == T_SYMBOL);
 
     for (risp_vars *target = env->var_list; target; target = target->parent) {
         for (risp_object *vars = target->vars; vars; vars = vars->d.cons.cdr) {
             assert(vars->type == T_CONS);
-            assert(vars->d.cons.car->type == T_SYMBOL);
 
-            if (symbol == vars->d.cons.car) {
-                return vars;
+            risp_object *var = vars->d.cons.car;
+            assert(var->type == T_CONS);
+
+            if (symbol == var->d.cons.car) {
+                return var;
             }
         }
     }
@@ -321,7 +381,7 @@ static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
 }
 
 static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
-    assert(symbol->o->size == T_SYMBOL);
+    assert(symbol->o->type == T_SYMBOL);
 
     risp_object *tail = NULL;
     for (risp_object *var = vars->vars; var; var = var->d.cons.cdr) {
@@ -378,18 +438,19 @@ static void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value)
     cons->d.cons.cdr = value->o;
 }
 
-static risp_object *intern_symbol(risp_env *env, char *name) {
+static risp_object *intern_symbol(risp_env *env, const char *name) {
     usize name_len = strlen(name);
+    assert(name_len > 0);
 
     if (env->obarray != NULL) {
         for (risp_object *obj = env->obarray; obj; obj = obj->d.cons.cdr) {
             assert(obj->type == T_CONS);
 
             risp_object *sym = obj->d.cons.car;
-            assert(sym->type == T_SYMBOL);
+            assert(sym->type == T_SYMBOL || sym->type == T_KWSYMBOL);
 
-            if (str_like_len(sym) == name_len) {
-                if (!memcmp(sym->d.str_like, name, name_len)) {
+            if (sym->d.str_like.len == name_len) {
+                if (!memcmp(sym->d.str_like.s, name, name_len)) {
                     return sym;
                 }
             }
@@ -401,9 +462,15 @@ static risp_object *intern_symbol(risp_env *env, char *name) {
     cons->o->d.cons.cdr = env->obarray;
 
     risp_object *sym = alloc_str_like(env, name_len);
-    sym->type = T_SYMBOL;
-    memcpy(sym->d.str_like, name, name_len);
+    if (name[0] == ':') {
+        sym->type = T_KWSYMBOL;
+    } else {
+        sym->type = T_SYMBOL;
+    }
+    memcpy(sym->d.str_like.s, name, name_len);
     cons->o->d.cons.car = sym;
+
+    env->obarray = cons->o;
 
     unregister_ephemeral_object(env, cons);
 
@@ -470,26 +537,27 @@ static void lex_state_init(lex_state *state) {
     state->column = 0;
 }
 
-static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
+static token *next_token(lexer *lex, risp_error *err) {
     int c;
     bool inside_comment = false;
     for (;;) {
-        c = fgetc(infile);
+        c = fgetc(lex->infile);
         if (c == EOF) {
             return NULL;
         }
         if (c == ' ' || c == '\t' || c == '\r') {
-            state->column++;
+            lex->state->column++;
         } else if (c == '\n') {
-            state->line++;
-            state->column = 0;
+            lex->state->line++;
+            lex->state->column = 0;
             inside_comment = false;
         } else if (c == ';') {
             inside_comment = true;
-            state->column++;
+            lex->state->column++;
         } else if (inside_comment) {
-            state->column++;
+            lex->state->column++;
         } else {
+            lex->state->column++;
             break;
         }
     }
@@ -506,13 +574,13 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
         result->type = TK_BACKQUOTE;
     } else if (c == ',') {
         bool is_unquote;
-        c = fgetc(infile);
+        c = fgetc(lex->infile);
         if (c == EOF) {
             is_unquote = true;
         } else if (c == '@') {
             is_unquote = false;
         } else {
-            ungetc(c, infile);
+            ungetc(c, lex->infile);
             is_unquote = true;
         }
 
@@ -522,26 +590,26 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
             result->type = TK_SPLICE;
         }
     } else if (c == '#') {
-        c = fgetc(infile);
+        c = fgetc(lex->infile);
         if (c == EOF) {
             free(result);
 
             err->has_error = true;
             err->message = "Unexpected EOF";
-            err->line = state->line;
-            err->column = state->column;
+            err->line = lex->state->line;
+            err->column = lex->state->column;
             return NULL;
         } else if (c != '\'') {
             free(result);
 
             err->has_error = true;
             err->message = "Unexpected char";
-            err->line = state->line;
-            err->column = state->column;
+            err->line = lex->state->line;
+            err->column = lex->state->column;
             return NULL;
         }
 
-        state->column++;
+        lex->state->column++;
 
         result->type = TK_FUNQUOTE;
     } else if (isdigit(c) || c == '-') {
@@ -552,14 +620,14 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
 
         char first_char = c;
 
-        c = fgetc(infile);
+        c = fgetc(lex->infile);
         if (first_char == '-') {
             if (c == EOF) {
                 free(text);
                 goto scan_as_sym;
             } else if (!isdigit(c)) {
                 free(text);
-                ungetc(c, infile);
+                ungetc(c, lex->infile);
                 c = '-';
                 goto scan_as_sym;
             }
@@ -571,17 +639,17 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
         }
 
         for (;;) {
-            c = fgetc(infile);
+            c = fgetc(lex->infile);
             if (c == EOF) {
                 break;
             }
 
             if (!isdigit(c)) {
-                ungetc(c, infile);
+                ungetc(c, lex->infile);
                 break;
             }
 
-            state->column++;
+            lex->state->column++;
 
             if (len + 2 >= cap) {
                 cap <<= 1;
@@ -599,22 +667,22 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
         for (;;) {
-            c = fgetc(infile);
+            c = fgetc(lex->infile);
             if (c == EOF) {
                 free(result);
                 free(text);
 
                 err->has_error = true;
                 err->message = "Unexpected EOF";
-                err->line = state->line;
-                err->column = state->column;
+                err->line = lex->state->line;
+                err->column = lex->state->column;
                 return NULL;
             }
             if (c == '\n') {
-                state->line++;
-                state->column = 0;
+                lex->state->line++;
+                lex->state->column = 0;
             } else {
-                state->column++;
+                lex->state->column++;
                 if (c == '"') {
                     break;
                 }
@@ -638,16 +706,16 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
         char *text = malloc(sizeof(char) * cap);
         text[0] = c;
         for (;;) {
-            c = fgetc(infile);
+            c = fgetc(lex->infile);
             if (c == EOF) {
                 break;
             }
             if (!(isalnum(c) || strchr("+-*/=<>:$@", c))) {
-                ungetc(c, infile);
+                ungetc(c, lex->infile);
                 break;
             }
 
-            state->column++;
+            lex->state->column++;
 
             if (len + 2 >= cap) {
                 cap <<= 1;
@@ -668,6 +736,241 @@ static token *next_token(lex_state *state, FILE *infile, risp_error *err) {
     return result;
 }
 
+static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
+
+// read whole expression assuming that LPAREN is already read.
+static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) {
+    risp_eobject *root = register_ephemeral_object(env, alloc_object(env));
+    root->o->type = T_CONS;
+
+    risp_eobject *cur = NULL;
+    risp_eobject *prev = NULL;
+    risp_object *r = NULL;
+
+    for (;;) {
+        token *tk = next_token(lex, err);
+        if (tk == NULL) {
+            goto clean;
+        }
+
+        if (tk->type == TK_RPAREN) {
+            break;
+        }
+
+        if (cur == NULL) {
+            cur = root;
+        } else {
+            cur = register_ephemeral_object(env, alloc_object(env));
+            cur->o->type = T_CONS;
+        }
+
+        if (tk->type == TK_LPAREN) {
+            risp_object *o = read_sexp_inner(lex, err, env);
+            if (o == NULL) {
+                goto clean;
+            }
+            cur->o->d.cons.car = o;
+        } else if (tk->type == TK_QUOTE || tk->type == TK_BACKQUOTE || tk->type == TK_UNQUOTE || tk->type == TK_SPLICE || tk->type == TK_FUNQUOTE) {
+            const char *name;
+            if (tk->type == TK_QUOTE) {
+                name = "quote";
+            } else if (tk->type == TK_BACKQUOTE) {
+                name = "backquote";
+            } else if (tk->type == TK_UNQUOTE) {
+                name = "unquote";
+            } else if (tk->type == TK_SPLICE) {
+                name = "splice";
+            } else if (tk->type == TK_FUNQUOTE) {
+                name = "quote";
+            } else {
+                assert(false);
+                name = "";
+            }
+            risp_eobject *quote = register_ephemeral_object(env, intern_symbol(env, name));
+            risp_eobject *cons = register_ephemeral_object(env, alloc_object(env));
+            cons->o->type = T_CONS;
+            cons->o->d.cons.car = quote->o;
+
+            risp_object *inner = read_exp(lex, err, env);
+            if (inner == NULL) {
+                unregister_ephemeral_object(env, cons);
+                unregister_ephemeral_object(env, quote);
+                goto clean;
+            }
+            cons->o->d.cons.cdr = inner;
+
+            cur->o->d.cons.car = cons->o;
+
+            unregister_ephemeral_object(env, cons);
+            unregister_ephemeral_object(env, quote);
+        } else if (tk->type == TK_INT) {
+            risp_object *obj = alloc_object(env);
+            obj->type = T_INT;
+            obj->d.integer = strtol(tk->text, NULL, 0);
+            cur->o->d.cons.car = obj;
+        } else if (tk->type == TK_STRING) {
+            size_t len = strlen(tk->text);
+            risp_object *obj = alloc_str_like(env, len);
+            obj->type = T_STRING;
+            memcpy(obj->d.str_like.s, tk->text, len);
+            cur->o->d.cons.car = obj;
+        } else if (tk->type == TK_KWSYMBOL || tk->type == TK_SYMBOL) {
+            risp_object *sym = intern_symbol(env, tk->text);
+            cur->o->d.cons.car = sym;
+        }
+
+        if (prev != NULL) {
+            prev->o->d.cons.cdr = cur->o;
+            unregister_ephemeral_object(env, prev);
+        }
+        prev = cur;
+    }
+
+    if (prev == NULL) {
+        goto clean;
+    }
+
+    prev->o->d.cons.cdr = NULL;
+
+    r = root->o;
+
+clean:
+    unregister_ephemeral_object(env, root);
+    if (cur != root) {
+        unregister_ephemeral_object(env, cur);
+    }
+
+    return r;
+}
+
+static risp_object *read_sexp(lexer *lex, risp_error *err, risp_env *env) {
+    token *tk = next_token(lex, err);
+    if (tk == NULL) {
+        return NULL;
+    }
+    if (tk->type != TK_LPAREN) {
+        token_free(tk);
+
+        err->has_error = true;
+        err->line = lex->state->line;
+        err->column = lex->state->column;
+        err->message = "LPAREN expected";
+
+        return NULL;
+    }
+    token_free(tk);
+
+    return read_sexp_inner(lex, err, env);
+}
+
+// generalized read_sexp
+static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
+    return NULL;
+}
+
+static risp_object *handle_funcall(risp_env *env, risp_object *sexp) {
+    assert(sexp->type == T_CONS);
+
+    risp_object *func_sym = sexp->d.cons.car;
+    if (func_sym->type != T_SYMBOL) {
+        signal_error_s(env, "first element of sexp must be a symbol");
+        return NULL;
+    }
+
+    risp_object *func = lookup_symbol(env, func_sym);
+    if (func == NULL) {
+        signal_error_s(env, "function is not bound");
+        return NULL;
+    }
+
+    if (func->type == T_NATIVE_FUNC) {
+        return func->d.native_func(env, sexp->d.cons.cdr, 0);
+    } else if (func->type == T_FUNC) {
+        //TODO: call functions in lisp world
+    } else {
+        signal_error_s(env, "void function");
+    }
+    return NULL;
+}
+
+static i32 read_and_eval(lexer *lex, risp_env *env) {
+    risp_error err;
+    risp_error_init(&err);
+    risp_object *sexp = read_sexp(lex, &err, env);
+    if (sexp == NULL) {
+        if (err.has_error) {
+            fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);
+            return -1;
+        }
+        return 0;
+    }
+
+    handle_funcall(env, sexp);
+
+    risp_object *runtime_err = get_error(env);
+    if (runtime_err != NULL) {
+        //TODO: print error value
+        fputs("Fatal error\n", stderr);
+        if (runtime_err->type == T_STRING) {
+            fprintf(stderr, "%.*s\n", (int)runtime_err->d.str_like.len, runtime_err->d.str_like.s);
+        } else {
+            fprintf(stderr, "%d\n", runtime_err->type);
+        }
+        clear_error(env);
+
+        return -1;
+    }
+
+    return 1;
+}
+
+static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
+    bool first = true;
+    for (risp_object *o = args; o; o = o->d.cons.cdr) {
+        risp_object *target = o->d.cons.car;
+
+    print:
+        if (target->type == T_INT) {
+            printf(first ? "%ld" : " %ld", target->d.integer);
+        } else if (target->type == T_STRING) {
+            printf(first ? "%.*s" : " %.*s", (int)target->d.str_like.len, target->d.str_like.s);
+        } else if (target->type == T_SYMBOL) {
+            target = lookup_symbol(env, target);
+            goto print;
+        } else {
+            if (!first) {
+                puts("");
+            }
+
+            signal_error_s(env, "argument type must be stings or ints");
+
+            return NULL;
+        }
+        first = false;
+    }
+    if (!first) {
+        puts("");
+    }
+    return NULL;
+}
+
+static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
+    risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env));
+    risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
+
+    func_var->o->type = T_NATIVE_FUNC;
+    func_var->o->d.native_func = func;
+
+    make_global_variable(env, sym, func_var);
+
+    unregister_ephemeral_object(env, sym);
+    unregister_ephemeral_object(env, func_var);
+}
+
+static void init_native_functions(risp_env *env) {
+    register_native_function(env, "print", &Fprint);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fputs("usage: risp <infile>\n", stderr);
@@ -681,28 +984,31 @@ int main(int argc, char **argv) {
     }
 
     lex_state state;
-    risp_error err;
+    lex_state_init(&state);
+    lexer lex = {
+        .in_name = argv[1],
+        .infile = infile,
+        .state = &state
+    };
+    risp_env env;
+    env_init(&env);
+    init_native_functions(&env);
+
+    int exit_code = 0;
+
     for (;;) {
-        lex_state_init(&state);
-        risp_error_init(&err);
-
-        token *tk = next_token(&state, infile, &err);
-        if (tk == NULL) {
-            if (err.has_error) {
-                fprintf(stderr, "%s: %d: %d: %s\n", argv[1], err.line, err.column, err.message);
-                return 1;
-            } else {
-                break;
-            }
+        i32 status = read_and_eval(&lex, &env);
+        if (status <= 0) {
+            exit_code = -status;
+            goto clean;
         }
-
-        token_type_print(tk->type, stdout);
-        if (tk->text) {
-            printf(": %s", tk->text);
-        }
-        puts("");
-        token_free(tk);
     }
 
+clean:
+    free(env.heap);
+    ephemeral_object_free_all(&env);
+
     fclose(infile);
+
+    return exit_code;
 }
