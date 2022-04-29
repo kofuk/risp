@@ -7,6 +7,8 @@
 #include <inttypes.h>
 #include <stddef.h>
 
+#define FLAG_ALWAYS_GC (1)
+
 typedef uint8_t u8;
 typedef uint32_t u32;
 typedef int32_t i32;
@@ -110,6 +112,7 @@ struct risp_env {
     risp_eobject *ephemeral;
     risp_object *obarray;       // interned symbols
     risp_object *error;
+    u32 flags;
 };
 
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
@@ -257,7 +260,7 @@ static inline usize align_to_word(usize size) {
 }
 
 static void ensure_allocatable(risp_env *env, usize size) {
-    if (env->heap_cap - env->heap_len >= size) {
+    if ((env->flags & FLAG_ALWAYS_GC) || env->heap_cap - env->heap_len >= size) {
         return;
     }
 
@@ -350,6 +353,11 @@ static void env_init(risp_env *env) {
     env->ephemeral = NULL;
     env->obarray = NULL;
     env->error = NULL;
+    env->flags = 0;
+
+    if (strlen(getenv("RISP_ALWAYS_GC"))) {
+        env->flags |= FLAG_ALWAYS_GC;
+    }
 
     push_frame(env, 0, 1);
 }
