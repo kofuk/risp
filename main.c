@@ -868,29 +868,41 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     return NULL;
 }
 
-static risp_object *handle_funcall(risp_env *env, risp_object *sexp) {
-    assert(sexp->type == T_CONS);
-
-    risp_object *func_sym = sexp->d.cons.car;
-    if (func_sym->type != T_SYMBOL) {
-        signal_error_s(env, "first element of sexp must be a symbol");
+static risp_object *eval_exp(risp_env *env, risp_object *exp) {
+    if (exp == NULL) {
         return NULL;
-    }
+    } else if (exp->type == T_CONS) {
+        if (exp->d.cons.car->type != T_SYMBOL) {
+            signal_error_s(env, "void function");
+            return NULL;
+        }
 
-    risp_object *func = lookup_symbol(env, func_sym);
-    if (func == NULL) {
-        signal_error_s(env, "function is not bound");
+        risp_object *func = lookup_symbol(env, exp->d.cons.car);
+        if (func == NULL) {
+            signal_error_s(env, "void function");
+            return NULL;
+        }
+
+        if (func->type == T_NATIVE_FUNC) {
+            return func->d.native_func(env, exp->d.cons.cdr, 0);
+        } else if (func->type == T_FUNC) {
+            //TODO: call functions in lisp world
+        } else {
+            signal_error_s(env, "void function");
+        }
         return NULL;
+    } else if (exp->type == T_STRING || exp->type == T_KWSYMBOL ||
+               exp->type == T_INT || exp->type == T_FUNC || exp->type == T_NATIVE_FUNC) {
+        return exp;
+    } else if (exp->type == T_SYMBOL) {
+        risp_object *obj = lookup_symbol(env, exp);
+        if (obj == NULL) {
+            signal_error_s(env, "void variable");
+            return NULL;
+        }
+        return obj;
     }
-
-    if (func->type == T_NATIVE_FUNC) {
-        return func->d.native_func(env, sexp->d.cons.cdr, 0);
-    } else if (func->type == T_FUNC) {
-        //TODO: call functions in lisp world
-    } else {
-        signal_error_s(env, "void function");
-    }
-    return NULL;
+    assert(false);
 }
 
 static i32 read_and_eval(lexer *lex, risp_env *env) {
@@ -905,7 +917,7 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
         return 0;
     }
 
-    handle_funcall(env, sexp);
+    eval_exp(env, sexp);
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != NULL) {
@@ -925,33 +937,26 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
 }
 
 static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
-    bool first = true;
-    for (risp_object *o = args; o; o = o->d.cons.cdr) {
-        risp_object *target = o->d.cons.car;
-
-    print:
-        if (target->type == T_INT) {
-            printf(first ? "%ld" : " %ld", target->d.integer);
-        } else if (target->type == T_STRING) {
-            printf(first ? "%.*s" : " %.*s", (int)target->d.str_like.len, target->d.str_like.s);
-        } else if (target->type == T_SYMBOL) {
-            target = lookup_symbol(env, target);
-            goto print;
-        } else {
-            if (!first) {
-                puts("");
-            }
-
-            signal_error_s(env, "argument type must be stings or ints");
-
-            return NULL;
-        }
-        first = false;
+    if (args == NULL) {
+        return NULL;
     }
-    if (!first) {
-        puts("");
+
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+    risp_object *target = eval_exp(env, eargs->o->d.cons.car);
+
+    if (target->type == T_INT) {
+        printf("%ld\n", target->d.integer);
+    } else if (target->type == T_STRING) {
+        printf("%.*s\n", (int)target->d.str_like.len, target->d.str_like.s);
+    } else {
+        signal_error_s(env, "argument type must be stings or ints");
+
+        return NULL;
     }
-    return NULL;
+
+    args = eargs->o->d.cons.cdr;
+    unregister_ephemeral_object(env, eargs);
+    return Fprint(env, args, caller_level);
 }
 
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
