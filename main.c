@@ -49,6 +49,7 @@ typedef struct {
     char *in_name;
     FILE *infile;
     lex_state *state;
+    token *tk;
 } lexer;
 
 typedef enum {
@@ -477,49 +478,6 @@ static risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
-static void token_type_print(token_type type, FILE *out) {
-    char const *repr;
-    switch (type) {
-    case TK_LPAREN:
-        repr = "TK_LPAREN";
-        break;
-    case TK_RPAREN:
-        repr = "TK_RPAREN";
-        break;
-    case TK_QUOTE:
-        repr = "TK_QUOTE";
-        break;
-    case TK_BACKQUOTE:
-        repr = "TK_BACKQUOTE";
-        break;
-    case TK_UNQUOTE:
-        repr = "TK_UNQUOTE";
-        break;
-    case TK_SPLICE:
-        repr = "TK_SPLICE";
-        break;
-    case TK_FUNQUOTE:
-        repr = "TK_FUNQUOTE";
-        break;
-    case TK_INT:
-        repr = "TK_INT";
-        break;
-    case TK_STRING:
-        repr = "TK_STRING";
-        break;
-    case TK_KWSYMBOL:
-        repr = "TK_KWSYMBOL";
-        break;
-    case TK_SYMBOL:
-        repr = "TK_SYMBOL";
-        break;
-    default:
-        repr = "<unknown>";
-        break;
-    }
-    fputs(repr, out);
-}
-
 static void token_free(token *tk) {
     free(tk->text);
     free(tk);
@@ -537,7 +495,13 @@ static void lex_state_init(lex_state *state) {
     state->column = 0;
 }
 
-static token *next_token(lexer *lex, risp_error *err) {
+static token *get_token(lexer *lex, risp_error *err) {
+    if (lex->tk != NULL) {
+        token *tk = lex->tk;
+        lex->tk = NULL;
+        return tk;
+    }
+
     int c;
     bool inside_comment = false;
     for (;;) {
@@ -738,136 +702,8 @@ static token *next_token(lexer *lex, risp_error *err) {
     return result;
 }
 
-static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
-
-// read whole expression assuming that LPAREN is already read.
-static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) {
-    risp_eobject *root = register_ephemeral_object(env, alloc_object(env));
-    root->o->type = T_CONS;
-
-    risp_eobject *cur = NULL;
-    risp_eobject *prev = NULL;
-    risp_object *r = NULL;
-
-    for (;;) {
-        token *tk = next_token(lex, err);
-        if (tk == NULL) {
-            goto clean;
-        }
-
-        if (tk->type == TK_RPAREN) {
-            break;
-        }
-
-        if (cur == NULL) {
-            cur = root;
-        } else {
-            cur = register_ephemeral_object(env, alloc_object(env));
-            cur->o->type = T_CONS;
-        }
-
-        if (tk->type == TK_LPAREN) {
-            risp_object *o = read_sexp_inner(lex, err, env);
-            if (o == NULL) {
-                goto clean;
-            }
-            cur->o->d.cons.car = o;
-        } else if (tk->type == TK_QUOTE || tk->type == TK_BACKQUOTE || tk->type == TK_UNQUOTE || tk->type == TK_SPLICE || tk->type == TK_FUNQUOTE) {
-            const char *name;
-            if (tk->type == TK_QUOTE) {
-                name = "quote";
-            } else if (tk->type == TK_BACKQUOTE) {
-                name = "backquote";
-            } else if (tk->type == TK_UNQUOTE) {
-                name = "unquote";
-            } else if (tk->type == TK_SPLICE) {
-                name = "splice";
-            } else if (tk->type == TK_FUNQUOTE) {
-                name = "quote";
-            } else {
-                assert(false);
-                name = "";
-            }
-            risp_eobject *quote = register_ephemeral_object(env, intern_symbol(env, name));
-            risp_eobject *cons = register_ephemeral_object(env, alloc_object(env));
-            cons->o->type = T_CONS;
-            cons->o->d.cons.car = quote->o;
-
-            risp_object *inner = read_exp(lex, err, env);
-            if (inner == NULL) {
-                unregister_ephemeral_object(env, cons);
-                unregister_ephemeral_object(env, quote);
-                goto clean;
-            }
-            cons->o->d.cons.cdr = inner;
-
-            cur->o->d.cons.car = cons->o;
-
-            unregister_ephemeral_object(env, cons);
-            unregister_ephemeral_object(env, quote);
-        } else if (tk->type == TK_INT) {
-            risp_object *obj = alloc_object(env);
-            obj->type = T_INT;
-            obj->d.integer = strtol(tk->text, NULL, 0);
-            cur->o->d.cons.car = obj;
-        } else if (tk->type == TK_STRING) {
-            size_t len = strlen(tk->text);
-            risp_object *obj = alloc_str_like(env, len);
-            obj->type = T_STRING;
-            memcpy(obj->d.str_like.s, tk->text, len);
-            cur->o->d.cons.car = obj;
-        } else if (tk->type == TK_KWSYMBOL || tk->type == TK_SYMBOL) {
-            risp_object *sym = intern_symbol(env, tk->text);
-            cur->o->d.cons.car = sym;
-        }
-
-        if (prev != NULL) {
-            prev->o->d.cons.cdr = cur->o;
-            unregister_ephemeral_object(env, prev);
-        }
-        prev = cur;
-    }
-
-    if (prev == NULL) {
-        goto clean;
-    }
-
-    prev->o->d.cons.cdr = NULL;
-
-    r = root->o;
-
-clean:
-    unregister_ephemeral_object(env, root);
-    if (cur != root) {
-        unregister_ephemeral_object(env, cur);
-    }
-
-    return r;
-}
-
-static risp_object *read_sexp(lexer *lex, risp_error *err, risp_env *env) {
-    token *tk = next_token(lex, err);
-    if (tk == NULL) {
-        return NULL;
-    }
-    if (tk->type != TK_LPAREN) {
-        token_free(tk);
-
-        err->has_error = true;
-        err->line = lex->state->line;
-        err->column = lex->state->column;
-        err->message = "LPAREN expected";
-
-        return NULL;
-    }
-    token_free(tk);
-
-    return read_sexp_inner(lex, err, env);
-}
-
-// generalized read_sexp
-static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
-    return NULL;
+static inline void unget_token(lexer *lex, token *tk) {
+    lex->tk = tk;
 }
 
 static risp_object *eval_exp(risp_env *env, risp_object *exp) {
@@ -907,10 +743,181 @@ static risp_object *eval_exp(risp_env *env, risp_object *exp) {
     assert(false);
 }
 
+static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
+
+// read whole expression assuming that LPAREN is already read.
+static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) {
+    risp_eobject *root = register_ephemeral_object(env, alloc_object(env));
+    risp_eobject *prev = register_ephemeral_object(env, root->o);
+
+    for (;;) {
+        token *tk = get_token(lex, err);
+        if (tk == NULL) {
+            unregister_ephemeral_object(env, prev);
+            unregister_ephemeral_object(env, root);
+
+            err->has_error = err;
+            err->message = "unexpected end of file";
+
+            return NULL;
+        } else if (tk->type == TK_RPAREN) {
+            token_free(tk);
+            break;
+        }
+
+        unget_token(lex, tk);
+
+        risp_eobject *cons = register_ephemeral_object(env, alloc_object(env));
+        cons->o->type = T_CONS;
+
+        risp_object *obj = read_exp(lex, err, env);
+        if (err->has_error) {
+            unregister_ephemeral_object(env, cons);
+            unregister_ephemeral_object(env, prev);
+            unregister_ephemeral_object(env, root);
+            return NULL;
+        }
+
+        cons->o->d.cons.car = obj;
+
+        prev->o->d.cons.cdr = cons->o;
+        unregister_ephemeral_object(env, prev);
+        prev = cons;
+    }
+
+    risp_object *first = root->o->d.cons.cdr;
+    unregister_ephemeral_object(env, root);
+    unregister_ephemeral_object(env, prev);
+    return first;
+}
+
+static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
+    token *tk = get_token(lex, err);
+    if (tk == NULL) {
+        return NULL;
+    }
+
+    if (tk->type == TK_LPAREN) {
+        token_free(tk);
+        return read_sexp_inner(lex, err, env);
+    } else if (tk->type == TK_QUOTE) {
+        token_free(tk);
+        risp_eobject *econs = register_ephemeral_object(env, alloc_object(env));
+        risp_eobject *equote = register_ephemeral_object(env, intern_symbol(env, "quote"));
+        risp_object *inner = read_exp(lex, err, env);
+        risp_object *quote = equote->o;
+        risp_object *cons = econs->o;
+        unregister_ephemeral_object(env, equote);
+        unregister_ephemeral_object(env, econs);
+        if (err->has_error) {
+            return NULL;
+        }
+        cons->type = T_CONS;
+        cons->d.cons.car = quote;
+        cons->d.cons.cdr = inner;
+        return cons;
+    } else if (tk->type == TK_BACKQUOTE) {
+        token_free(tk);
+        risp_eobject *econs = register_ephemeral_object(env, alloc_object(env));
+        risp_eobject *ebackquote = register_ephemeral_object(env, intern_symbol(env, "backquote"));
+        risp_object *inner = read_exp(lex, err, env);
+        risp_object *backquote = ebackquote->o;
+        risp_object *cons = econs->o;
+        unregister_ephemeral_object(env, ebackquote);
+        unregister_ephemeral_object(env, econs);
+        if (err->has_error) {
+            return NULL;
+        }
+        cons->type = T_CONS;
+        cons->d.cons.car = backquote;
+        cons->d.cons.cdr = inner;
+        return cons;
+    } else if (tk->type == TK_UNQUOTE) {
+        token_free(tk);
+        risp_eobject *econs = register_ephemeral_object(env, alloc_object(env));
+        risp_eobject *eunquote = register_ephemeral_object(env, intern_symbol(env, "unquote"));
+        risp_object *inner = read_exp(lex, err, env);
+        risp_object *unquote = eunquote->o;
+        risp_object *cons = econs->o;
+        unregister_ephemeral_object(env, eunquote);
+        unregister_ephemeral_object(env, econs);
+        if (err->has_error) {
+            return NULL;
+        }
+        cons->type = T_CONS;
+        cons->d.cons.car = unquote;
+        cons->d.cons.cdr = inner;
+        return cons;
+    } else if (tk->type == TK_SPLICE) {
+        token_free(tk);
+        risp_eobject *econs = register_ephemeral_object(env, alloc_object(env));
+        risp_eobject *esplice = register_ephemeral_object(env, intern_symbol(env, "splice"));
+        risp_object *inner = read_exp(lex, err, env);
+        risp_object *splice = esplice->o;
+        risp_object *cons = econs->o;
+        unregister_ephemeral_object(env, esplice);
+        unregister_ephemeral_object(env, econs);
+        if (err->has_error) {
+            return NULL;
+        }
+        cons->type = T_CONS;
+        cons->d.cons.car = splice;
+        cons->d.cons.cdr = inner;
+        return cons;
+    } else if (tk->type == TK_FUNQUOTE) {
+        token_free(tk);
+        risp_eobject *econs = register_ephemeral_object(env, alloc_object(env));
+        risp_eobject *efunction = register_ephemeral_object(env, intern_symbol(env, "function"));
+        risp_object *inner = read_exp(lex, err, env);
+        risp_object *function = efunction->o;
+        risp_object *cons = econs->o;
+        unregister_ephemeral_object(env, efunction);
+        unregister_ephemeral_object(env, econs);
+        if (err->has_error) {
+            return NULL;
+        }
+        cons->type = T_CONS;
+        cons->d.cons.car = function;
+        cons->d.cons.cdr = inner;
+        return cons;
+    } else if (tk->type == TK_INT) {
+        risp_object *r = alloc_object(env);
+        r->type = T_INT;
+        r->d.integer = strtoll(tk->text, NULL, 0);
+        token_free(tk);
+        return r;
+    } else if (tk->type == TK_STRING) {
+        size_t len = strlen(tk->text);
+        risp_object *r = alloc_str_like(env, len);
+        r->type = T_STRING;
+        memcpy(r->d.str_like.s, tk->text, len);
+        token_free(tk);
+        return r;
+    } else if (tk->type == TK_KWSYMBOL) {
+        risp_object *r = intern_symbol(env, tk->text);
+        token_free(tk);
+        return r;
+    } else if (tk->type == TK_SYMBOL) {
+        risp_object *r = intern_symbol(env, tk->text);
+        token_free(tk);
+        return r;
+    } else {
+        err->has_error = true;
+        err->line = lex->state->line;
+        err->column = lex->state->column;
+        err->message = "unexpected token";
+
+        return NULL;
+    }
+
+    assert(false);
+    return NULL;
+}
+
 static i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
-    risp_object *sexp = read_sexp(lex, &err, env);
+    risp_object *sexp = read_exp(lex, &err, env);
     if (sexp == NULL) {
         if (err.has_error) {
             fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);
@@ -995,7 +1002,8 @@ int main(int argc, char **argv) {
     lexer lex = {
         .in_name = argv[1],
         .infile = infile,
-        .state = &state
+        .state = &state,
+        .tk = NULL
     };
     risp_env env;
     env_init(&env);
