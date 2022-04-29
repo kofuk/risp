@@ -392,22 +392,23 @@ static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
 static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
     assert(symbol->o->type == T_SYMBOL);
 
-    risp_object *tail = NULL;
     for (risp_object *var = vars->vars; var; var = var->d.cons.cdr) {
         assert(var->type == T_CONS);
-        assert(var->d.cons.car->type == T_SYMBOL);
 
-        tail = var;
+        risp_object *var_cons = var->d.cons.car;
+        assert(var_cons->type == T_CONS);
+        assert(var_cons->d.cons.car->type == T_SYMBOL);
 
-        if (symbol->o == var->d.cons.car) {
-            var->d.cons.cdr = value->o;
+        if (symbol->o == var_cons->d.cons.car) {
+            var_cons->d.cons.cdr = value->o;
             return;
         }
     }
 
     risp_eobject *list_element = register_ephemeral_object(env, alloc_object(env));
     list_element->o->type = T_CONS;
-    list_element->o->d.cons.cdr = NULL;
+    list_element->o->d.cons.cdr = vars->vars;
+    vars->vars = list_element->o;
 
     risp_object *cons = alloc_object(env);
     cons->type = T_CONS;
@@ -415,12 +416,6 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, 
     cons->d.cons.cdr = value->o;
 
     list_element->o->d.cons.car = cons;
-
-    if (tail == NULL) {
-        vars->vars = list_element->o;
-    } else {
-        tail->d.cons.cdr = list_element->o;
-    }
 
     unregister_ephemeral_object(env, list_element);
 }
@@ -976,6 +971,35 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
     return Fprint(env, args, caller_level);
 }
 
+static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
+    if (args == NULL) {
+        risp_object *result = alloc_object(env);
+        result->type = T_INT;
+        result->d.integer = 0;
+        return result;
+    }
+
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+    risp_object *target = eval_exp(env, eargs->o->d.cons.car);
+
+    u64 cur_val;
+    if (target->type == T_INT) {
+        cur_val = target->d.integer;
+    } else {
+        signal_error_s(env, "argument type must be int");
+        return NULL;
+    }
+
+    args = eargs->o;
+    unregister_ephemeral_object(env, eargs);
+    risp_object *rest_result = Fplus(env, args->d.cons.cdr, caller_level);
+    if (rest_result == NULL) {
+        return NULL;
+    }
+    rest_result->d.integer += cur_val;
+    return rest_result;
+}
+
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
     risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env));
     risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
@@ -990,6 +1014,7 @@ static inline void register_native_function(risp_env *env, const char *name, ris
 }
 
 static void init_native_functions(risp_env *env) {
+    register_native_function(env, "+", &Fplus);
     register_native_function(env, "print", &Fprint);
 }
 
