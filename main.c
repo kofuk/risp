@@ -635,6 +635,8 @@ static token *next_token(lexer *lex, risp_error *err) {
             if (c != EOF && isdigit(c)) {
                 text[1] = c;
                 len++;
+            } else {
+                ungetc(c, lex->infile);
             }
         }
 
