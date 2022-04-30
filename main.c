@@ -21,6 +21,7 @@ typedef size_t usize;
 typedef enum {
     TK_LPAREN,
     TK_RPAREN,
+    TK_DOT,
     TK_QUOTE,
     TK_BACKQUOTE,
     TK_UNQUOTE,
@@ -539,6 +540,8 @@ static token *get_token(lexer *lex, risp_error *err) {
         result->type = TK_LPAREN;
     } else if (c == ')') {
         result->type = TK_RPAREN;
+    } else if (c == '.') {
+        result->type = TK_DOT;
     } else if (c == '\'') {
         result->type = TK_QUOTE;
     } else if (c == '`') {
@@ -755,6 +758,68 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
 // read whole expression assuming that LPAREN is already read.
 static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) {
     risp_eobject *root = register_ephemeral_object(env, alloc_object(env));
+    root->o->type = T_CONS;
+
+    token *tk = get_token(lex, err);
+    if (tk == NULL) {
+        goto lex_err;
+    }
+    if (tk->type == TK_RPAREN) {
+        token_free(tk);
+        unregister_ephemeral_object(env, root);
+        return NULL;
+    }
+    unget_token(lex, tk);
+
+    risp_object *obj = read_exp(lex, err, env);
+    if (err->has_error) {
+        unregister_ephemeral_object(env, root);
+        return NULL;
+    }
+    root->o->d.cons.car = obj;
+
+    tk = get_token(lex, err);
+    if (tk == NULL) {
+        goto lex_err;
+    }
+    if (tk->type == TK_RPAREN) {
+        token_free(tk);
+        risp_object *r = root->o;
+        unregister_ephemeral_object(env, root);
+
+        r->d.cons.cdr = NULL;
+        return r;
+    } else if (tk->type == TK_DOT) {
+        // this is cons.
+        token_free(tk);
+        risp_object *obj = read_exp(lex, err, env);
+        if (err->has_error) {
+            unregister_ephemeral_object(env, root);
+            return NULL;
+        }
+        root->o->d.cons.cdr = obj;
+
+        tk = get_token(lex, err);
+        if (tk == NULL) {
+            goto lex_err;
+        }
+        if (tk->type != TK_RPAREN) {
+            unget_token(lex, tk);
+
+            unregister_ephemeral_object(env, root);
+
+            err->has_error = err;
+            err->message = "RPAREN expected";
+
+            return NULL;
+        }
+
+        risp_object *result = root->o;
+        unregister_ephemeral_object(env, root);
+        return result;
+    }
+    unget_token(lex, tk);
+
     risp_eobject *prev = register_ephemeral_object(env, root->o);
 
     for (;;) {
@@ -792,10 +857,18 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
         prev = cons;
     }
 
-    risp_object *first = root->o->d.cons.cdr;
+    risp_object *first = root->o;
     unregister_ephemeral_object(env, root);
     unregister_ephemeral_object(env, prev);
     return first;
+
+lex_err:
+    unregister_ephemeral_object(env, root);
+
+    err->has_error = err;
+    err->message = "unexpected end of file";
+
+    return NULL;
 }
 
 static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
