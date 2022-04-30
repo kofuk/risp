@@ -70,7 +70,7 @@ typedef struct lexer {
     bool rl_nul_read;
 } lexer;
 
-typedef enum { T_CONS = 1, T_STRING, T_SYMBOL, T_KWSYMBOL, T_INT, T_FUNC, T_NATIVE_FUNC } risp_type;
+typedef enum { T_CONS = 1, T_STRING, T_SYMBOL, T_KWSYMBOL, T_INT, T_FUNC, T_NATIVE_FUNC, T_NATIVE_HANDLE } risp_type;
 
 typedef struct risp_object risp_object;
 typedef struct risp_env risp_env;
@@ -94,6 +94,7 @@ struct risp_object {
             u32 level;
         } func;
         risp_native_func native_func;
+        void *native_handle;
     } d;
     u8 str_data[];
 };
@@ -219,18 +220,6 @@ static void run_gc(risp_env *env) {
             }
             break;
 
-        case T_STRING:
-            break;
-
-        case T_SYMBOL:
-            break;
-
-        case T_KWSYMBOL:
-            break;
-
-        case T_INT:
-            break;
-
         case T_FUNC:
             if (scan_ptr->d.func.arglist != &Qnil) {
                 if (scan_ptr->d.func.arglist->forwarding == NULL) {
@@ -252,7 +241,12 @@ static void run_gc(risp_env *env) {
             }
             break;
 
+        case T_STRING:
+        case T_SYMBOL:
+        case T_KWSYMBOL:
+        case T_INT:
         case T_NATIVE_FUNC:
+        case T_NATIVE_HANDLE:
             break;
         }
     }
@@ -1116,6 +1110,10 @@ static void repr_object(risp_env *env, risp_object *obj) {
                                         risp_native_func func;
                                     } *)&eobj->o->d.native_func)
                                        ->p);
+        break;
+
+    case T_NATIVE_HANDLE:
+        printf("<native_handle@%p>", eobj->o->d.native_handle);
         break;
     }
 }
