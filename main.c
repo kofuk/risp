@@ -1,11 +1,11 @@
 #include <assert.h>
+#include <ctype.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <ctype.h>
 #include <string.h>
-#include <inttypes.h>
-#include <stddef.h>
 
 #define FLAG_ALWAYS_GC (1)
 
@@ -57,15 +57,7 @@ typedef struct {
     token *tk;
 } lexer;
 
-typedef enum {
-    T_CONS = 1,
-    T_STRING,
-    T_SYMBOL,
-    T_KWSYMBOL,
-    T_INT,
-    T_FUNC,
-    T_NATIVE_FUNC
-} risp_type;
+typedef enum { T_CONS = 1, T_STRING, T_SYMBOL, T_KWSYMBOL, T_INT, T_FUNC, T_NATIVE_FUNC } risp_type;
 
 typedef struct risp_object risp_object;
 typedef struct risp_env risp_env;
@@ -74,7 +66,7 @@ typedef risp_object *(*risp_native_func)(risp_env *env, risp_object *args, u32 c
 
 struct risp_object {
     risp_type type;
-    usize size;                // should be pow of sizeof(void *)
+    usize size; // should be pow of sizeof(void *)
     struct risp_object *forwarding;
     union {
         struct {
@@ -94,12 +86,13 @@ struct risp_object {
 };
 
 typedef struct risp_vars {
-    struct risp_object *vars;   // alist of symbol and its value.
+    struct risp_object *vars; // alist of symbol and its value.
     struct risp_vars *parent;
     struct risp_vars *prev;
 } risp_vars;
 
-// risp_eobject is a wrapper for risp_object to avoid ephemeral objects to be freed and keep track of them.
+// risp_eobject is a wrapper for risp_object to avoid ephemeral objects to be freed and keep track
+// of them.
 typedef struct risp_eobject {
     risp_object *o;
     struct risp_eobject *next;
@@ -109,9 +102,9 @@ struct risp_env {
     void *heap;
     usize heap_len;
     usize heap_cap;
-    risp_vars *var_list;        // last element of variable list
+    risp_vars *var_list; // last element of variable list
     risp_eobject *ephemeral;
-    risp_object *obarray;       // interned symbols
+    risp_object *obarray; // interned symbols
     risp_object *error;
     u32 flags;
 };
@@ -252,24 +245,18 @@ static void ephemeral_object_free_all(risp_env *env) {
     }
 }
 
-static risp_object *get_error(risp_env *env) {
-    return env->error;
-}
+static risp_object *get_error(risp_env *env) { return env->error; }
 
-static void clear_error(risp_env *env) {
-    env->error = NULL;
-}
+static void clear_error(risp_env *env) { env->error = NULL; }
 
-static inline usize align_to_word(usize size) {
-    return (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
-}
+static inline usize align_to_word(usize size) { return (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1); }
 
 static void ensure_allocatable(risp_env *env, usize size) {
     if ((env->flags & FLAG_ALWAYS_GC) || env->heap_cap - env->heap_len >= size) {
         return;
     }
 
-    //TODO: more efficient way.
+    // TODO: more efficient way.
 
     run_gc(env);
     if (env->heap_cap - env->heap_len >= size) {
@@ -318,9 +305,7 @@ static risp_object *alloc_object(risp_env *env) {
     return r;
 }
 
-static void signal_error(risp_env *env, risp_object *err) {
-    env->error = err;
-}
+static void signal_error(risp_env *env, risp_object *err) { env->error = err; }
 
 static void signal_error_s(risp_env *env, const char *msg) {
     size_t len = strlen(msg);
@@ -638,7 +623,7 @@ static token *get_token(lexer *lex, risp_error *err) {
 
         result->type = TK_INT;
         result->text = text;
-    }else if (c == '"') {
+    } else if (c == '"') {
         usize len = 0;
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
@@ -712,9 +697,7 @@ static token *get_token(lexer *lex, risp_error *err) {
     return result;
 }
 
-static inline void unget_token(lexer *lex, token *tk) {
-    lex->tk = tk;
-}
+static inline void unget_token(lexer *lex, token *tk) { lex->tk = tk; }
 
 static risp_object *eval_exp(risp_env *env, risp_object *exp) {
     if (exp == NULL) {
@@ -734,13 +717,13 @@ static risp_object *eval_exp(risp_env *env, risp_object *exp) {
         if (func->type == T_NATIVE_FUNC) {
             return func->d.native_func(env, exp->d.cons.cdr, 0);
         } else if (func->type == T_FUNC) {
-            //TODO: call functions in lisp world
+            // TODO: call functions in lisp world
         } else {
             signal_error_s(env, "void function");
         }
         return NULL;
-    } else if (exp->type == T_STRING || exp->type == T_KWSYMBOL ||
-               exp->type == T_INT || exp->type == T_FUNC || exp->type == T_NATIVE_FUNC) {
+    } else if (exp->type == T_STRING || exp->type == T_KWSYMBOL || exp->type == T_INT || exp->type == T_FUNC ||
+               exp->type == T_NATIVE_FUNC) {
         return exp;
     } else if (exp->type == T_SYMBOL) {
         risp_object *obj = lookup_symbol(env, exp);
@@ -1070,7 +1053,11 @@ static void repr_object(risp_env *env, risp_object *obj) {
         break;
 
     case T_NATIVE_FUNC:
-        printf("<native_func@%p>", ((union {void *p; risp_native_func func;} *)&eobj->o->d.native_func)->p);
+        printf("<native_func@%p>", ((union {
+                                        void *p;
+                                        risp_native_func func;
+                                    } *)&eobj->o->d.native_func)
+                                       ->p);
         break;
     }
 }
@@ -1306,12 +1293,7 @@ int main(int argc, char **argv) {
 
     lex_state state;
     lex_state_init(&state);
-    lexer lex = {
-        .in_name = argv[1],
-        .infile = infile,
-        .state = &state,
-        .tk = NULL
-    };
+    lexer lex = {.in_name = argv[1], .infile = infile, .state = &state, .tk = NULL};
     risp_env env;
     env_init(&env);
     init_native_functions(&env);
