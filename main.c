@@ -1,11 +1,16 @@
 #include <assert.h>
 #include <ctype.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+#include <readline/history.h>
+#include <readline/readline.h>
 
 #define FLAG_ALWAYS_GC (1)
 
@@ -50,11 +55,19 @@ typedef struct {
     int column;
 } lex_state;
 
-typedef struct {
+typedef struct lexer {
     char *in_name;
     FILE *infile;
     lex_state *state;
     token *tk;
+
+    int (*getc)(struct lexer *);
+    int (*ungetc)(int, struct lexer *);
+    char *rl_prompt;
+    char *rl_line;
+    size_t rl_cursor;
+    int rl_unget;
+    bool rl_nul_read;
 } lexer;
 
 typedef enum { T_CONS = 1, T_STRING, T_SYMBOL, T_KWSYMBOL, T_INT, T_FUNC, T_NATIVE_FUNC } risp_type;
@@ -498,7 +511,7 @@ static token *get_token(lexer *lex, risp_error *err) {
     int c;
     bool inside_comment = false;
     for (;;) {
-        c = fgetc(lex->infile);
+        c = lex->getc(lex);
         if (c == EOF) {
             return NULL;
         }
@@ -533,13 +546,13 @@ static token *get_token(lexer *lex, risp_error *err) {
         result->type = TK_BACKQUOTE;
     } else if (c == ',') {
         bool is_unquote;
-        c = fgetc(lex->infile);
+        c = lex->getc(lex);
         if (c == EOF) {
             is_unquote = true;
         } else if (c == '@') {
             is_unquote = false;
         } else {
-            ungetc(c, lex->infile);
+            lex->ungetc(c, lex);
             is_unquote = true;
         }
 
@@ -549,7 +562,7 @@ static token *get_token(lexer *lex, risp_error *err) {
             result->type = TK_SPLICE;
         }
     } else if (c == '#') {
-        c = fgetc(lex->infile);
+        c = lex->getc(lex);
         if (c == EOF) {
             free(result);
 
@@ -579,14 +592,14 @@ static token *get_token(lexer *lex, risp_error *err) {
 
         char first_char = c;
 
-        c = fgetc(lex->infile);
+        c = lex->getc(lex);
         if (first_char == '-') {
             if (c == EOF) {
                 free(text);
                 goto scan_as_sym;
             } else if (!isdigit(c)) {
                 free(text);
-                ungetc(c, lex->infile);
+                lex->ungetc(c, lex);
                 c = '-';
                 goto scan_as_sym;
             }
@@ -595,18 +608,18 @@ static token *get_token(lexer *lex, risp_error *err) {
                 text[1] = c;
                 len++;
             } else {
-                ungetc(c, lex->infile);
+                lex->ungetc(c, lex);
             }
         }
 
         for (;;) {
-            c = fgetc(lex->infile);
+            c = lex->getc(lex);
             if (c == EOF) {
                 break;
             }
 
             if (!isdigit(c)) {
-                ungetc(c, lex->infile);
+                lex->ungetc(c, lex);
                 break;
             }
 
@@ -628,7 +641,7 @@ static token *get_token(lexer *lex, risp_error *err) {
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
         for (;;) {
-            c = fgetc(lex->infile);
+            c = lex->getc(lex);
             if (c == EOF) {
                 free(result);
                 free(text);
@@ -667,12 +680,12 @@ static token *get_token(lexer *lex, risp_error *err) {
         char *text = malloc(sizeof(char) * cap);
         text[0] = c;
         for (;;) {
-            c = fgetc(lex->infile);
+            c = lex->getc(lex);
             if (c == EOF) {
                 break;
             }
             if (!(isalnum(c) || strchr("+-*/=<>:$@", c))) {
-                ungetc(c, lex->infile);
+                lex->ungetc(c, lex);
                 break;
             }
 
@@ -859,6 +872,7 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     if (tk == NULL) {
         return NULL;
     }
+    lex->rl_prompt = "... ";
 
     if (tk->type == TK_LPAREN) {
         token_free(tk);
@@ -1066,6 +1080,7 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
     risp_object *sexp = read_exp(lex, &err, env);
+    lex->rl_prompt = ">>> ";
     if (sexp == NULL) {
         if (err.has_error) {
             fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);
@@ -1279,21 +1294,76 @@ static void init_native_functions(risp_env *env) {
     register_native_function(env, "setq", &Fsetq);
 }
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        fputs("usage: risp <infile>\n", stderr);
-        return 1;
+static int file_getc(lexer *lex) { return fgetc(lex->infile); }
+
+static int file_ungetc(int c, lexer *lex) { return ungetc(c, lex->infile); }
+
+static int readline_getc(lexer *lex) {
+    if (lex->rl_unget >= 0) {
+        int c = lex->rl_unget;
+        lex->rl_unget = -1;
+        return c;
     }
 
-    FILE *infile = fopen(argv[1], "r");
-    if (!infile) {
-        perror("Failed to open infile");
-        return 1;
+    if (lex->rl_line == NULL || lex->rl_line[lex->rl_cursor] == '\0') {
+        if (!lex->rl_nul_read) {
+            lex->rl_nul_read = true;
+            return '\n';
+        }
+
+        free(lex->rl_line);
+        lex->rl_line = readline(lex->rl_prompt);
+        add_history(lex->rl_line);
+        lex->rl_cursor = 0;
+        lex->rl_nul_read = false;
+    }
+    if (lex->rl_line == NULL) {
+        return EOF;
+    } else if (lex->rl_line[lex->rl_cursor] == '\0') {
+        lex->rl_nul_read = true;
+        return '\n';
+    }
+
+    int c = lex->rl_line[lex->rl_cursor];
+    lex->rl_cursor++;
+    return c;
+}
+
+static int readline_ungetc(int c, lexer *lex) {
+    lex->rl_unget = c;
+    return c;
+}
+
+int main(int argc, char **argv) {
+    lexer lex = {.rl_prompt = ">>> ", .rl_line = NULL, .rl_cursor = 0, .rl_unget = -1, .rl_nul_read = true};
+
+    if (argc < 2) {
+        lex.in_name = "<stdin>";
+        if (isatty(STDIN_FILENO)) {
+            lex.getc = &readline_getc;
+            lex.ungetc = &readline_ungetc;
+        } else {
+            lex.infile = stdin;
+            lex.getc = &file_getc;
+            lex.ungetc = &file_ungetc;
+        }
+    } else {
+        FILE *infile = fopen(argv[1], "r");
+        if (infile == NULL) {
+            perror("open: cannot open input file");
+            return 1;
+        }
+
+        lex.in_name = argv[1];
+        lex.infile = infile;
+        lex.getc = &file_getc;
+        lex.ungetc = &file_ungetc;
     }
 
     lex_state state;
     lex_state_init(&state);
-    lexer lex = {.in_name = argv[1], .infile = infile, .state = &state, .tk = NULL};
+    lex.state = &state;
+    lex.tk = NULL;
     risp_env env;
     env_init(&env);
     init_native_functions(&env);
@@ -1312,7 +1382,9 @@ clean:
     free(env.heap);
     ephemeral_object_free_all(&env);
 
-    fclose(infile);
+    if (lex.infile != NULL) {
+        fclose(lex.infile);
+    }
 
     return exit_code;
 }
