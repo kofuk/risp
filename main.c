@@ -68,6 +68,7 @@ typedef struct lexer {
     size_t rl_cursor;
     int rl_unget;
     bool rl_nul_read;
+    bool repl;
 } lexer;
 
 typedef enum { T_CONS = 1, T_STRING, T_SYMBOL, T_KWSYMBOL, T_INT, T_FUNC, T_NATIVE_FUNC, T_NATIVE_HANDLE } risp_type;
@@ -386,7 +387,7 @@ static void env_init(risp_env *env) {
     env->error = &Qnil;
     env->flags = 0;
 
-    if (strlen(getenv("RISP_ALWAYS_GC"))) {
+    if (getenv("RISP_ALWAYS_GC") != NULL) {
         env->flags |= FLAG_ALWAYS_GC;
     }
 
@@ -1126,7 +1127,7 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
     if (sexp == NULL) {
         if (err.has_error) {
             fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);
-            return -1;
+            return lex->repl ? 1 : -1;
         }
         return 0;
     }
@@ -1140,7 +1141,7 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
         putchar('\n');
         clear_error(env);
 
-        return -1;
+        return lex->repl ? 1 : -1;
     }
 
     repr_object(env, result);
@@ -1377,13 +1378,21 @@ static int readline_ungetc(int c, lexer *lex) {
 }
 
 int main(int argc, char **argv) {
-    lexer lex = {.rl_prompt = ">>> ", .rl_line = NULL, .rl_cursor = 0, .rl_unget = -1, .rl_nul_read = true};
+    lexer lex = {
+        .rl_prompt = ">>> ",
+        .rl_line = NULL,
+        .rl_cursor = 0,
+        .rl_unget = -1,
+        .rl_nul_read = true,
+        .repl = false,
+    };
 
     if (argc < 2) {
         lex.in_name = "<stdin>";
         if (isatty(STDIN_FILENO)) {
             lex.getc = &readline_getc;
             lex.ungetc = &readline_ungetc;
+            lex.repl = true;
         } else {
             lex.infile = stdin;
             lex.getc = &file_getc;
@@ -1414,6 +1423,7 @@ int main(int argc, char **argv) {
 
     for (;;) {
         i32 status = read_and_eval(&lex, &env);
+
         if (status <= 0) {
             exit_code = -status;
             goto clean;
