@@ -1138,6 +1138,46 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
     return NULL;
 }
 
+static risp_object *Flength(risp_env *env, risp_object *args, u32 caller_level) {
+    UNUSED(env);
+    UNUSED(caller_level);
+
+    if (args == NULL) {
+        signal_error_s(env, "just 1 argument expected");
+        return NULL;
+    }
+
+    i64 result = 0;
+
+    risp_object *target = eval_exp(env, args->d.cons.car);
+
+    if (get_error(env) != NULL) {
+        return NULL;
+    }
+
+    if (target == NULL) {
+        result = 0;
+    } else if (target->type == T_CONS) {
+        for (risp_object *arg = target; arg != NULL; arg = arg->d.cons.cdr) {
+            ++result;
+
+            risp_object *next = arg->d.cons.cdr;
+            if (next != NULL && next->type != T_CONS) {
+                signal_error_s(env, "argument must be a list or string");
+                return NULL;
+            }
+        }
+    } else if (target->type == T_STRING) {
+        result = target->d.str_len;
+    }
+
+    risp_object *r = alloc_object(env);
+    r->type = T_INT;
+    r->d.integer = result;
+
+    return r;
+}
+
 static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
     UNUSED(caller_level);
 
@@ -1197,9 +1237,10 @@ static inline void register_native_function(risp_env *env, const char *name, ris
 
 static void init_native_functions(risp_env *env) {
     register_native_function(env, "+", &Fplus);
+    register_native_function(env, "function", &Fquote);
+    register_native_function(env, "length", &Flength);
     register_native_function(env, "print", &Fprint);
     register_native_function(env, "quote", &Fquote);
-    register_native_function(env, "function", &Fquote);
 }
 
 int main(int argc, char **argv) {
