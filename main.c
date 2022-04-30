@@ -9,6 +9,8 @@
 
 #define FLAG_ALWAYS_GC (1)
 
+#define UNUSED(x) (void)x
+
 typedef uint8_t u8;
 typedef uint32_t u32;
 typedef int32_t i32;
@@ -905,6 +907,10 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         return r;
     } else if (tk->type == TK_SYMBOL) {
+        if (!strcmp(tk->text, "nil")) {
+            token_free(tk);
+            return NULL;
+        }
         risp_object *r = intern_symbol(env, tk->text);
         token_free(tk);
         return r;
@@ -921,6 +927,83 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     return NULL;
 }
 
+static void repr_object(risp_env *env, risp_object *obj);
+
+static void repr_list(risp_env *env, risp_object *obj) {
+    if (obj == NULL) {
+        putchar(')');
+    } else if (obj->type == T_CONS) {
+        putchar(' ');
+        repr_object(env, obj->d.cons.car);
+        repr_list(env, obj->d.cons.cdr);
+    } else {
+        fputs(" . ", stdout);
+        repr_object(env, obj);
+        putchar(')');
+    }
+}
+
+static void repr_object(risp_env *env, risp_object *obj) {
+    if (obj == NULL) {
+        puts("nil");
+        return;
+    }
+
+    risp_eobject *eobj = register_ephemeral_object(env, obj);
+    switch (obj->type) {
+    case T_CONS:
+        if (eobj->o->d.cons.car == intern_symbol(env, "quote")) {
+            putchar('\'');
+            obj = eobj->o;
+            unregister_ephemeral_object(env, eobj);
+            repr_object(env, obj->d.cons.cdr);
+        } else if (eobj->o->d.cons.car == intern_symbol(env, "function")) {
+            putchar('#');
+            putchar('\'');
+            obj = eobj->o;
+            unregister_ephemeral_object(env, eobj);
+            repr_object(env, obj->d.cons.cdr);
+        } else if (eobj->o->d.cons.car == intern_symbol(env, "unquote")) {
+            putchar(',');
+            obj = eobj->o;
+            unregister_ephemeral_object(env, eobj);
+            repr_object(env, obj->d.cons.cdr);
+        } else if (eobj->o->d.cons.car == intern_symbol(env, "splice")) {
+            putchar(',');
+            putchar('@');
+            obj = eobj->o;
+            unregister_ephemeral_object(env, eobj);
+            repr_object(env, obj->d.cons.cdr);
+        } else {
+            putchar('(');
+            repr_object(env, eobj->o->d.cons.car);
+            repr_list(env, obj->d.cons.cdr);
+        }
+        break;
+
+    case T_STRING:
+        printf("\"%.*s\"", (int)eobj->o->d.str_like.len, eobj->o->d.str_like.s);
+        break;
+
+    case T_SYMBOL:
+    case T_KWSYMBOL:
+        printf("%.*s", (int)eobj->o->d.str_like.len, eobj->o->d.str_like.s);
+        break;
+
+    case T_INT:
+        printf("%ld", eobj->o->d.integer);
+        break;
+
+    case T_FUNC:
+        fputs("<func>", stderr);
+        break;
+
+    case T_NATIVE_FUNC:
+        printf("<native_func@%p>", ((union {void *p; risp_native_func func;} *)&eobj->o->d.native_func)->p);
+        break;
+    }
+}
+
 static i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
@@ -933,21 +1016,20 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
         return 0;
     }
 
-    eval_exp(env, sexp);
+    risp_object *result = eval_exp(env, sexp);
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != NULL) {
-        //TODO: print error value
-        fputs("Fatal error\n", stderr);
-        if (runtime_err->type == T_STRING) {
-            fprintf(stderr, "%.*s\n", (int)runtime_err->d.str_like.len, runtime_err->d.str_like.s);
-        } else {
-            fprintf(stderr, "%d\n", runtime_err->type);
-        }
+        fputs("Fatal error: ", stderr);
+        repr_object(env, runtime_err);
+        putchar('\n');
         clear_error(env);
 
         return -1;
     }
+
+    repr_object(env, result);
+    putchar('\n');
 
     return 1;
 }
@@ -999,7 +1081,7 @@ static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
         }
 
         if (target->type == T_INT) {
-            result->o->d.integer = target->d.integer;
+            result->o->d.integer += target->d.integer;
         } else {
             unregister_ephemeral_object(env, cur);
             unregister_ephemeral_object(env, result);
@@ -1019,6 +1101,12 @@ static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
     return r;
 }
 
+static risp_object *Fquote(risp_env *env, risp_object *args, u32 caller_level) {
+    UNUSED(env);
+    UNUSED(caller_level);
+    return args;
+}
+
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
     risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env));
     risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
@@ -1035,6 +1123,8 @@ static inline void register_native_function(risp_env *env, const char *name, ris
 static void init_native_functions(risp_env *env) {
     register_native_function(env, "+", &Fplus);
     register_native_function(env, "print", &Fprint);
+    register_native_function(env, "quote", &Fquote);
+    register_native_function(env, "function", &Fquote);
 }
 
 int main(int argc, char **argv) {
