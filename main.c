@@ -127,6 +127,10 @@ static void run_gc(risp_env *env) {
     risp_object *free_ptr = new_heap;
 
     for (risp_eobject *eo = env->ephemeral; eo; eo = eo->next) {
+        if (eo->o == NULL) {
+            continue;
+        }
+
         if (eo->o->forwarding == NULL) {
             new_len += copy_object(free_ptr, eo->o);
             eo->o = free_ptr;
@@ -949,55 +953,70 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
 }
 
 static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
-    if (args == NULL) {
-        return NULL;
+    risp_eobject *cur = register_ephemeral_object(env, args);
+
+    while (cur->o != NULL) {
+        risp_object *target = eval_exp(env, cur->o->d.cons.car);
+        if (get_error(env) != NULL) {
+            unregister_ephemeral_object(env, cur);
+            return NULL;
+        }
+
+        if (target->type == T_INT) {
+            printf("%ld\n", target->d.integer);
+        } else if (target->type == T_STRING) {
+            printf("%.*s\n", (int)target->d.str_like.len, target->d.str_like.s);
+        } else {
+            unregister_ephemeral_object(env, cur);
+
+            signal_error_s(env, "argument type must be stings or ints");
+            return NULL;
+        }
+
+        risp_object *prev = cur->o;
+        unregister_ephemeral_object(env, cur);
+        cur = register_ephemeral_object(env, prev->d.cons.cdr);
     }
 
-    risp_eobject *eargs = register_ephemeral_object(env, args);
-    risp_object *target = eval_exp(env, eargs->o->d.cons.car);
+    unregister_ephemeral_object(env, cur);
 
-    if (target->type == T_INT) {
-        printf("%ld\n", target->d.integer);
-    } else if (target->type == T_STRING) {
-        printf("%.*s\n", (int)target->d.str_like.len, target->d.str_like.s);
-    } else {
-        signal_error_s(env, "argument type must be stings or ints");
-
-        return NULL;
-    }
-
-    args = eargs->o->d.cons.cdr;
-    unregister_ephemeral_object(env, eargs);
-    return Fprint(env, args, caller_level);
+    return NULL;
 }
 
 static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
-    if (args == NULL) {
-        risp_object *result = alloc_object(env);
-        result->type = T_INT;
-        result->d.integer = 0;
-        return result;
+    risp_eobject *result = register_ephemeral_object(env, alloc_object(env));
+    result->o->type = T_INT;
+    result->o->d.integer = 0;
+
+    risp_eobject *cur = register_ephemeral_object(env, args);
+
+    while (cur->o != NULL) {
+        risp_object *target = eval_exp(env, cur->o->d.cons.car);
+        if (get_error(env) != NULL) {
+            unregister_ephemeral_object(env, cur);
+            unregister_ephemeral_object(env, result);
+            return NULL;
+        }
+
+        if (target->type == T_INT) {
+            result->o->d.integer = target->d.integer;
+        } else {
+            unregister_ephemeral_object(env, cur);
+            unregister_ephemeral_object(env, result);
+
+            signal_error_s(env, "argument type must be int");
+            return NULL;
+        }
+
+        risp_object *prev = cur->o;
+        unregister_ephemeral_object(env, cur);
+        cur = register_ephemeral_object(env, prev->d.cons.cdr);
     }
 
-    risp_eobject *eargs = register_ephemeral_object(env, args);
-    risp_object *target = eval_exp(env, eargs->o->d.cons.car);
-
-    u64 cur_val;
-    if (target->type == T_INT) {
-        cur_val = target->d.integer;
-    } else {
-        signal_error_s(env, "argument type must be int");
-        return NULL;
-    }
-
-    args = eargs->o;
-    unregister_ephemeral_object(env, eargs);
-    risp_object *rest_result = Fplus(env, args->d.cons.cdr, caller_level);
-    if (rest_result == NULL) {
-        return NULL;
-    }
-    rest_result->d.integer += cur_val;
-    return rest_result;
+    unregister_ephemeral_object(env, cur);
+    risp_object *r = result->o;
+    unregister_ephemeral_object(env, result);
+    return r;
 }
 
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
