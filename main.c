@@ -1016,7 +1016,7 @@ static void repr_list(risp_env *env, risp_object *obj) {
 
 static void repr_object(risp_env *env, risp_object *obj) {
     if (obj == NULL) {
-        puts("nil");
+        fputs("nil", stdout);
         return;
     }
 
@@ -1138,17 +1138,29 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
     return NULL;
 }
 
+static i64 list_length(risp_env *env, risp_object *list) {
+    i64 result = 0;
+    for (risp_object *arg = list; arg != NULL; arg = arg->d.cons.cdr) {
+        ++result;
+
+        risp_object *next = arg->d.cons.cdr;
+        if (next != NULL && next->type != T_CONS) {
+            signal_error_s(env, "argument must be a list or string");
+            return 0;
+        }
+    }
+    return result;
+}
+
 static risp_object *Flength(risp_env *env, risp_object *args, u32 caller_level) {
-    UNUSED(env);
     UNUSED(caller_level);
 
-    if (args == NULL) {
+    if (list_length(env, args) != 1) {
         signal_error_s(env, "just 1 argument expected");
         return NULL;
     }
 
     i64 result = 0;
-
     risp_object *target = eval_exp(env, args->d.cons.car);
 
     if (get_error(env) != NULL) {
@@ -1158,15 +1170,7 @@ static risp_object *Flength(risp_env *env, risp_object *args, u32 caller_level) 
     if (target == NULL) {
         result = 0;
     } else if (target->type == T_CONS) {
-        for (risp_object *arg = target; arg != NULL; arg = arg->d.cons.cdr) {
-            ++result;
-
-            risp_object *next = arg->d.cons.cdr;
-            if (next != NULL && next->type != T_CONS) {
-                signal_error_s(env, "argument must be a list or string");
-                return NULL;
-            }
-        }
+        result = list_length(env, target);
     } else if (target->type == T_STRING) {
         result = target->d.str_len;
     }
@@ -1222,6 +1226,50 @@ static risp_object *Fquote(risp_env *env, risp_object *args, u32 caller_level) {
     return args;
 }
 
+static risp_object *Fsetq(risp_env *env, risp_object *args, u32 caller_level) {
+    UNUSED(caller_level);
+
+    if (list_length(env, args) % 2 != 0) {
+        signal_error_s(env, "wrong argument count");
+        return NULL;
+    }
+
+    risp_eobject *cur = register_ephemeral_object(env, args);
+    risp_eobject *last = register_ephemeral_object(env, NULL);
+    while (cur->o != NULL) {
+        if (cur->o->d.cons.car->type != T_SYMBOL) {
+            unregister_ephemeral_object(env, cur);
+
+            signal_error_s(env, "variable must be symbol");
+            return NULL;
+        }
+        risp_eobject *sym = register_ephemeral_object(env, cur->o->d.cons.car);
+        risp_object *val = eval_exp(env, cur->o->d.cons.cdr->d.cons.car);
+        if (get_error(env) != NULL) {
+            unregister_ephemeral_object(env, sym);
+            unregister_ephemeral_object(env, last);
+            unregister_ephemeral_object(env, cur);
+            return NULL;
+        }
+
+        risp_eobject *e_val = register_ephemeral_object(env, val);
+        scoped_set(env, sym, e_val);
+        unregister_ephemeral_object(env, last);
+        unregister_ephemeral_object(env, sym);
+
+        last = e_val;
+
+        risp_eobject *next = register_ephemeral_object(env, cur->o->d.cons.cdr->d.cons.cdr);
+        unregister_ephemeral_object(env, cur);
+        cur = next;
+    }
+
+    unregister_ephemeral_object(env, cur);
+    risp_object *r = last->o;
+    unregister_ephemeral_object(env, last);
+    return r;
+}
+
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
     risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env));
     risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
@@ -1241,6 +1289,7 @@ static void init_native_functions(risp_env *env) {
     register_native_function(env, "length", &Flength);
     register_native_function(env, "print", &Fprint);
     register_native_function(env, "quote", &Fquote);
+    register_native_function(env, "setq", &Fsetq);
 }
 
 int main(int argc, char **argv) {
