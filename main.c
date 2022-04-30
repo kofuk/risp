@@ -80,10 +80,7 @@ struct risp_object {
             struct risp_object *car;
             struct risp_object *cdr;
         } cons;
-        struct {
-            usize len;
-            u8 s[0];
-        } str_like;
+        usize str_len;
         i64 integer;
         struct {
             struct risp_object *body;
@@ -92,6 +89,7 @@ struct risp_object {
         } func;
         risp_native_func native_func;
     } d;
+    u8 str_data[];
 };
 
 typedef struct risp_vars {
@@ -136,7 +134,7 @@ static void run_gc(risp_env *env) {
         if (eo->o->forwarding == NULL) {
             new_len += copy_object(free_ptr, eo->o);
             eo->o = free_ptr;
-            free_ptr = new_heap + new_len;
+            free_ptr = (void *)((char *)new_heap + new_len);
         } else {
             eo->o = eo->o->forwarding;
         }
@@ -146,7 +144,7 @@ static void run_gc(risp_env *env) {
         if (vars->vars->forwarding == NULL) {
             new_len += copy_object(free_ptr, vars->vars);
             vars->vars = free_ptr;
-            free_ptr = new_heap + new_len;
+            free_ptr = (void *)((char *)new_heap + new_len);
         } else {
             vars->vars = vars->vars->forwarding;
         }
@@ -156,7 +154,7 @@ static void run_gc(risp_env *env) {
         if (env->error->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->error);
             env->error = free_ptr;
-            free_ptr = new_heap + new_len;
+            free_ptr = (void *)((char *)new_heap + new_len);
         } else {
             env->error = env->error->forwarding;
         }
@@ -166,7 +164,7 @@ static void run_gc(risp_env *env) {
         if (env->obarray->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->obarray);
             env->obarray = free_ptr;
-            free_ptr = new_heap + new_len;
+            free_ptr = (void *)((char *)new_heap + new_len);
         } else {
             env->obarray = env->obarray->forwarding;
         }
@@ -179,14 +177,14 @@ static void run_gc(risp_env *env) {
             if (scan_ptr->d.cons.car->forwarding == NULL) {
                 new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
                 scan_ptr->d.cons.car = free_ptr;
-                free_ptr = new_heap + new_len;
+                free_ptr = (void *)((char *)new_heap + new_len);
             } else {
                 scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
             }
             if (scan_ptr->d.cons.cdr->forwarding == NULL) {
                 new_len += copy_object(free_ptr, scan_ptr->d.cons.cdr);
                 scan_ptr->d.cons.cdr = free_ptr;
-                free_ptr = new_heap + new_len;
+                free_ptr = (void *)((char *)new_heap + new_len);
             } else {
                 scan_ptr->d.cons.cdr = scan_ptr->d.cons.cdr->forwarding;
             }
@@ -208,7 +206,7 @@ static void run_gc(risp_env *env) {
             if (scan_ptr->d.func.arglist->forwarding == NULL) {
                 new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
                 scan_ptr->d.func.arglist = free_ptr;
-                free_ptr = new_heap + new_len;
+                free_ptr = (void *)((char *)new_heap + new_len);
             } else {
                 scan_ptr->d.func.arglist = scan_ptr->d.func.arglist->forwarding;
             }
@@ -290,7 +288,7 @@ static void ensure_allocatable(risp_env *env, usize size) {
 }
 
 static risp_object *alloc_str_like(risp_env *env, usize len) {
-    usize str_offset = offsetof(risp_object, d.str_like.s);
+    usize str_offset = offsetof(risp_object, str_data);
     usize alloc_size;
     if (len <= sizeof(risp_object) - str_offset) {
         alloc_size = align_to_word(sizeof(risp_object));
@@ -300,10 +298,10 @@ static risp_object *alloc_str_like(risp_env *env, usize len) {
 
     ensure_allocatable(env, alloc_size);
 
-    risp_object *r = env->heap + env->heap_len;
+    risp_object *r = (void *)((char *)env->heap + env->heap_len);
     r->size = alloc_size;
     r->forwarding = NULL;
-    r->d.str_like.len = len;
+    r->d.str_len = len;
     env->heap_len += alloc_size;
     return r;
 }
@@ -312,7 +310,7 @@ static risp_object *alloc_object(risp_env *env) {
     usize size = align_to_word(sizeof(risp_object));
     ensure_allocatable(env, size);
 
-    risp_object *r = env->heap + env->heap_len;
+    risp_object *r = (void *)((char *)env->heap + env->heap_len);
     r->size = size;
     r->forwarding = NULL;
     env->heap_len += size;
@@ -327,8 +325,8 @@ static void signal_error_s(risp_env *env, const char *msg) {
     size_t len = strlen(msg);
     risp_object *err = alloc_str_like(env, len);
     err->type = T_STRING;
-    memcpy(err->d.str_like.s, msg, len);
-    err->d.str_like.len = len;
+    memcpy(err->str_data, msg, len);
+    err->d.str_len = len;
     signal_error(env, err);
 }
 
@@ -459,8 +457,8 @@ static risp_object *intern_symbol(risp_env *env, const char *name) {
             risp_object *sym = obj->d.cons.car;
             assert(sym->type == T_SYMBOL || sym->type == T_KWSYMBOL);
 
-            if (sym->d.str_like.len == name_len) {
-                if (!memcmp(sym->d.str_like.s, name, name_len)) {
+            if (sym->d.str_len == name_len) {
+                if (!memcmp(sym->str_data, name, name_len)) {
                     return sym;
                 }
             }
@@ -477,7 +475,7 @@ static risp_object *intern_symbol(risp_env *env, const char *name) {
     } else {
         sym->type = T_SYMBOL;
     }
-    memcpy(sym->d.str_like.s, name, name_len);
+    memcpy(sym->str_data, name, name_len);
     cons->o->d.cons.car = sym;
 
     env->obarray = cons->o;
@@ -899,7 +897,7 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         size_t len = strlen(tk->text);
         risp_object *r = alloc_str_like(env, len);
         r->type = T_STRING;
-        memcpy(r->d.str_like.s, tk->text, len);
+        memcpy(r->str_data, tk->text, len);
         token_free(tk);
         return r;
     } else if (tk->type == TK_KWSYMBOL) {
@@ -982,12 +980,12 @@ static void repr_object(risp_env *env, risp_object *obj) {
         break;
 
     case T_STRING:
-        printf("\"%.*s\"", (int)eobj->o->d.str_like.len, eobj->o->d.str_like.s);
+        printf("\"%.*s\"", (int)eobj->o->d.str_len, eobj->o->str_data);
         break;
 
     case T_SYMBOL:
     case T_KWSYMBOL:
-        printf("%.*s", (int)eobj->o->d.str_like.len, eobj->o->d.str_like.s);
+        printf("%.*s", (int)eobj->o->d.str_len, eobj->o->str_data);
         break;
 
     case T_INT:
@@ -1035,6 +1033,8 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
 }
 
 static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
+    UNUSED(caller_level);
+
     risp_eobject *cur = register_ephemeral_object(env, args);
 
     while (cur->o != NULL) {
@@ -1047,7 +1047,7 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
         if (target->type == T_INT) {
             printf("%ld\n", target->d.integer);
         } else if (target->type == T_STRING) {
-            printf("%.*s\n", (int)target->d.str_like.len, target->d.str_like.s);
+            printf("%.*s\n", (int)target->d.str_len, target->str_data);
         } else {
             unregister_ephemeral_object(env, cur);
 
@@ -1066,6 +1066,8 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
 }
 
 static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
+    UNUSED(caller_level);
+
     risp_eobject *result = register_ephemeral_object(env, alloc_object(env));
     result->o->type = T_INT;
     result->o->d.integer = 0;
