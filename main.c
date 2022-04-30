@@ -104,6 +104,20 @@ typedef struct risp_vars {
     struct risp_vars *prev;
 } risp_vars;
 
+static risp_object Qnil = {
+    .type = T_CONS,
+    .size = sizeof(risp_object),
+    .d.cons.car = NULL,
+    .d.cons.cdr = NULL,
+};
+
+static risp_object Qt = {
+    .type = T_CONS,
+    .size = sizeof(risp_object),
+    .d.cons.car = NULL,
+    .d.cons.cdr = NULL,
+};
+
 // risp_eobject is a wrapper for risp_object to avoid ephemeral objects to be freed and keep track
 // of them.
 typedef struct risp_eobject {
@@ -134,7 +148,7 @@ static void run_gc(risp_env *env) {
     risp_object *free_ptr = new_heap;
 
     for (risp_eobject *eo = env->ephemeral; eo; eo = eo->next) {
-        if (eo->o == NULL) {
+        if (eo->o == NULL || eo->o == &Qnil) {
             continue;
         }
 
@@ -148,6 +162,10 @@ static void run_gc(risp_env *env) {
     }
 
     for (risp_vars *vars = env->var_list; vars != NULL; vars = vars->prev) {
+        if (vars->vars == &Qnil) {
+            continue;
+        }
+
         if (vars->vars->forwarding == NULL) {
             new_len += copy_object(free_ptr, vars->vars);
             vars->vars = free_ptr;
@@ -157,7 +175,7 @@ static void run_gc(risp_env *env) {
         }
     }
 
-    if (env->error != NULL) {
+    if (env->error != &Qnil) {
         if (env->error->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->error);
             env->error = free_ptr;
@@ -167,7 +185,7 @@ static void run_gc(risp_env *env) {
         }
     }
 
-    if (env->obarray != NULL) {
+    if (env->obarray != &Qnil) {
         if (env->obarray->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->obarray);
             env->obarray = free_ptr;
@@ -181,19 +199,23 @@ static void run_gc(risp_env *env) {
     while (scan_ptr < free_ptr) {
         switch (scan_ptr->type) {
         case T_CONS:
-            if (scan_ptr->d.cons.car->forwarding == NULL) {
-                new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
-                scan_ptr->d.cons.car = free_ptr;
-                free_ptr = (void *)((char *)new_heap + new_len);
-            } else {
-                scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
+            if (scan_ptr->d.cons.car != &Qnil) {
+                if (scan_ptr->d.cons.car->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
+                    scan_ptr->d.cons.car = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
+                }
             }
-            if (scan_ptr->d.cons.cdr->forwarding == NULL) {
-                new_len += copy_object(free_ptr, scan_ptr->d.cons.cdr);
-                scan_ptr->d.cons.cdr = free_ptr;
-                free_ptr = (void *)((char *)new_heap + new_len);
-            } else {
-                scan_ptr->d.cons.cdr = scan_ptr->d.cons.cdr->forwarding;
+            if (scan_ptr->d.cons.cdr != &Qnil) {
+                if (scan_ptr->d.cons.cdr->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->d.cons.cdr);
+                    scan_ptr->d.cons.cdr = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->d.cons.cdr = scan_ptr->d.cons.cdr->forwarding;
+                }
             }
             break;
 
@@ -210,12 +232,23 @@ static void run_gc(risp_env *env) {
             break;
 
         case T_FUNC:
-            if (scan_ptr->d.func.arglist->forwarding == NULL) {
-                new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
-                scan_ptr->d.func.arglist = free_ptr;
-                free_ptr = (void *)((char *)new_heap + new_len);
-            } else {
-                scan_ptr->d.func.arglist = scan_ptr->d.func.arglist->forwarding;
+            if (scan_ptr->d.func.arglist != &Qnil) {
+                if (scan_ptr->d.func.arglist->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
+                    scan_ptr->d.func.arglist = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->d.func.arglist = scan_ptr->d.func.arglist->forwarding;
+                }
+            }
+            if (scan_ptr->d.func.body != &Qnil) {
+                if (scan_ptr->d.func.body->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->d.func.body);
+                    scan_ptr->d.func.body = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->d.func.body = scan_ptr->d.func.body->forwarding;
+                }
             }
             break;
 
@@ -224,6 +257,7 @@ static void run_gc(risp_env *env) {
         }
     }
 
+    memset(env->heap, 0, env->heap_len);
     free(env->heap);
     env->heap = new_heap;
     env->heap_len = new_len;
@@ -260,7 +294,7 @@ static void ephemeral_object_free_all(risp_env *env) {
 
 static risp_object *get_error(risp_env *env) { return env->error; }
 
-static void clear_error(risp_env *env) { env->error = NULL; }
+static void clear_error(risp_env *env) { env->error = &Qnil; }
 
 static inline usize align_to_word(usize size) { return (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1); }
 
@@ -354,8 +388,8 @@ static void env_init(risp_env *env) {
     env->heap = malloc(env->heap_cap);
     env->var_list = NULL;
     env->ephemeral = NULL;
-    env->obarray = NULL;
-    env->error = NULL;
+    env->obarray = &Qnil;
+    env->error = &Qnil;
     env->flags = 0;
 
     if (strlen(getenv("RISP_ALWAYS_GC"))) {
@@ -381,13 +415,13 @@ static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
         }
     }
 
-    return NULL;
+    return &Qnil;
 }
 
 static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     risp_object *cons = lookup_variable_cons(env, symbol);
-    if (cons == NULL) {
-        return NULL;
+    if (cons == &Qnil) {
+        return &Qnil;
     }
     return cons->d.cons.cdr;
 }
@@ -438,7 +472,7 @@ static void make_global_variable(risp_env *env, risp_eobject *symbol, risp_eobje
 
 static void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
     risp_object *cons = lookup_variable_cons(env, symbol->o);
-    if (cons == NULL) {
+    if (cons == &Qnil) {
         make_global_variable(env, symbol, value);
         return;
     }
@@ -449,8 +483,8 @@ static risp_object *intern_symbol(risp_env *env, const char *name) {
     usize name_len = strlen(name);
     assert(name_len > 0);
 
-    if (env->obarray != NULL) {
-        for (risp_object *obj = env->obarray; obj; obj = obj->d.cons.cdr) {
+    if (env->obarray != &Qnil) {
+        for (risp_object *obj = env->obarray; obj != &Qnil; obj = obj->d.cons.cdr) {
             assert(obj->type == T_CONS);
 
             risp_object *sym = obj->d.cons.car;
@@ -713,8 +747,10 @@ static token *get_token(lexer *lex, risp_error *err) {
 static inline void unget_token(lexer *lex, token *tk) { lex->tk = tk; }
 
 static risp_object *eval_exp(risp_env *env, risp_object *exp) {
-    if (exp == NULL) {
-        return NULL;
+    if (exp == &Qnil) {
+        return &Qnil;
+    } else if (exp == &Qt) {
+        return &Qt;
     } else if (exp->type == T_CONS) {
         if (exp->d.cons.car->type != T_SYMBOL) {
             signal_error_s(env, "void function");
@@ -740,13 +776,14 @@ static risp_object *eval_exp(risp_env *env, risp_object *exp) {
         return exp;
     } else if (exp->type == T_SYMBOL) {
         risp_object *obj = lookup_symbol(env, exp);
-        if (obj == NULL) {
+        if (obj == &Qnil) {
             signal_error_s(env, "void variable");
             return NULL;
         }
         return obj;
     }
     assert(false);
+    return &Qnil;
 }
 
 static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
@@ -763,7 +800,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
     if (tk->type == TK_RPAREN) {
         token_free(tk);
         unregister_ephemeral_object(env, root);
-        return NULL;
+        return &Qnil;
     }
     unget_token(lex, tk);
 
@@ -783,7 +820,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
         risp_object *r = root->o;
         unregister_ephemeral_object(env, root);
 
-        r->d.cons.cdr = NULL;
+        r->d.cons.cdr = &Qnil;
         return r;
     } else if (tk->type == TK_DOT) {
         // this is cons.
@@ -853,6 +890,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
         prev = cons;
     }
 
+    prev->o->d.cons.cdr = &Qnil;
     risp_object *first = root->o;
     unregister_ephemeral_object(env, root);
     unregister_ephemeral_object(env, prev);
@@ -977,7 +1015,10 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     } else if (tk->type == TK_SYMBOL) {
         if (!strcmp(tk->text, "nil")) {
             token_free(tk);
-            return NULL;
+            return &Qnil;
+        } else if (!strcmp(tk->text, "t")) {
+            token_free(tk);
+            return &Qt;
         }
         risp_object *r = intern_symbol(env, tk->text);
         token_free(tk);
@@ -998,7 +1039,7 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
 static void repr_object(risp_env *env, risp_object *obj);
 
 static void repr_list(risp_env *env, risp_object *obj) {
-    if (obj == NULL) {
+    if (obj == &Qnil) {
         putchar(')');
     } else if (obj->type == T_CONS) {
         putchar(' ');
@@ -1012,8 +1053,11 @@ static void repr_list(risp_env *env, risp_object *obj) {
 }
 
 static void repr_object(risp_env *env, risp_object *obj) {
-    if (obj == NULL) {
+    if (obj == &Qnil) {
         fputs("nil", stdout);
+        return;
+    } else if (obj == &Qt) {
+        fputs("t", stdout);
         return;
     }
 
@@ -1092,7 +1136,7 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_object *result = eval_exp(env, sexp);
 
     risp_object *runtime_err = get_error(env);
-    if (runtime_err != NULL) {
+    if (runtime_err != &Qnil) {
         fputs("Fatal error: ", stderr);
         repr_object(env, runtime_err);
         putchar('\n');
@@ -1112,9 +1156,9 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
 
-    while (cur->o != NULL) {
+    while (cur->o != &Qnil) {
         risp_object *target = eval_exp(env, cur->o->d.cons.car);
-        if (get_error(env) != NULL) {
+        if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
         }
@@ -1137,16 +1181,16 @@ static risp_object *Fprint(risp_env *env, risp_object *args, u32 caller_level) {
 
     unregister_ephemeral_object(env, cur);
 
-    return NULL;
+    return &Qnil;
 }
 
 static i64 list_length(risp_env *env, risp_object *list) {
     i64 result = 0;
-    for (risp_object *arg = list; arg != NULL; arg = arg->d.cons.cdr) {
+    for (risp_object *arg = list; arg != &Qnil; arg = arg->d.cons.cdr) {
         ++result;
 
         risp_object *next = arg->d.cons.cdr;
-        if (next != NULL && next->type != T_CONS) {
+        if (next != &Qnil && next->type != T_CONS) {
             signal_error_s(env, "argument must be a list or string");
             return 0;
         }
@@ -1165,11 +1209,11 @@ static risp_object *Flength(risp_env *env, risp_object *args, u32 caller_level) 
     i64 result = 0;
     risp_object *target = eval_exp(env, args->d.cons.car);
 
-    if (get_error(env) != NULL) {
+    if (get_error(env) != &Qnil) {
         return NULL;
     }
 
-    if (target == NULL) {
+    if (target == &Qnil) {
         result = 0;
     } else if (target->type == T_CONS) {
         result = list_length(env, target);
@@ -1193,9 +1237,9 @@ static risp_object *Fplus(risp_env *env, risp_object *args, u32 caller_level) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
 
-    while (cur->o != NULL) {
+    while (cur->o != &Qnil) {
         risp_object *target = eval_exp(env, cur->o->d.cons.car);
-        if (get_error(env) != NULL) {
+        if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, cur);
             unregister_ephemeral_object(env, result);
             return NULL;
@@ -1238,7 +1282,7 @@ static risp_object *Fsetq(risp_env *env, risp_object *args, u32 caller_level) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
     risp_eobject *last = register_ephemeral_object(env, NULL);
-    while (cur->o != NULL) {
+    while (cur->o != &Qnil) {
         if (cur->o->d.cons.car->type != T_SYMBOL) {
             unregister_ephemeral_object(env, cur);
 
@@ -1247,7 +1291,7 @@ static risp_object *Fsetq(risp_env *env, risp_object *args, u32 caller_level) {
         }
         risp_eobject *sym = register_ephemeral_object(env, cur->o->d.cons.car);
         risp_object *val = eval_exp(env, cur->o->d.cons.cdr->d.cons.car);
-        if (get_error(env) != NULL) {
+        if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, sym);
             unregister_ephemeral_object(env, last);
             unregister_ephemeral_object(env, cur);
