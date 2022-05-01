@@ -86,6 +86,8 @@ void make_local_variable(risp_env *env, risp_eobject *symbol, risp_eobject *valu
 void make_global_variable(risp_env *env, risp_eobject *symbol, risp_eobject *value);
 void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value);
 
+risp_object *intern_symbol(risp_env *env, const char *name);
+
 void var_frame_free_all(risp_env *env);
 void env_init(risp_env *env);
 void init_native_functions(risp_env *env);

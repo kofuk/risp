@@ -362,7 +362,7 @@ void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
     cons->d.cons.cdr = value->o;
 }
 
-static risp_object *intern_symbol(risp_env *env, const char *name) {
+risp_object *intern_symbol(risp_env *env, const char *name) {
     usize name_len = strlen(name);
     assert(name_len > 0);
 
@@ -863,8 +863,11 @@ static inline void register_native_function(risp_env *env, const char *name, ris
 
 void init_native_functions(risp_env *env) {
     register_native_function(env, "+", RISP_FUNC(plus));
+    register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "function", RISP_FUNC(quote));
+    register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "length", RISP_FUNC(length));
+    register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "quote", RISP_FUNC(quote));
     register_native_function(env, "setq", RISP_FUNC(setq));

@@ -1,4 +1,7 @@
+#include <string.h>
+
 #include "primitive.h"
+#include "rt.h"
 
 static i64 list_length(risp_env *env, risp_object *list) {
     i64 result = 0;
@@ -8,10 +11,70 @@ static i64 list_length(risp_env *env, risp_object *list) {
         risp_object *next = arg->d.cons.cdr;
         if (next != &Qnil && next->type != T_CONS) {
             signal_error_s(env, "argument must be a list or string");
-            return 0;
+            return -1;
         }
     }
     return result;
+}
+
+DEFUN(eq) {
+    UNUSED(caller_level);
+
+    if (list_length(env, args) != 2) {
+        signal_error_s(env, "2 arguments expected");
+        return NULL;
+    }
+
+    risp_eobject *arg2 = register_ephemeral_object(env, args->d.cons.cdr->d.cons.car);
+
+    risp_object *o1 = eval_exp(env, args->d.cons.car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, arg2);
+        return NULL;
+    }
+
+    risp_eobject *eo1 = register_ephemeral_object(env, o1);
+
+    risp_object *o2 = eval_exp(env, arg2->o);
+    unregister_ephemeral_object(env, arg2);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eo1);
+        return NULL;
+    }
+
+    o1 = eo1->o;
+    unregister_ephemeral_object(env, eo1);
+
+    if (o1->type == T_INT && o2->type == T_INT) {
+        return o1->d.integer == o2->d.integer ? &Qt : &Qnil;
+    }
+
+    return o1 == o2 ? &Qt : &Qnil;
+}
+
+DEFUN(intern) {
+    UNUSED(caller_level);
+
+    if (list_length(env, args) != 1) {
+        signal_error_s(env, "just 1 argument expected");
+        return NULL;
+    }
+
+    risp_object *name_obj = eval_exp(env, args->d.cons.car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (name_obj->type != T_STRING) {
+        signal_error_s(env, "Name must be a string");
+        return NULL;
+    }
+
+    char name[name_obj->d.str_len + 1];
+    name[name_obj->d.str_len] = '\0';
+    memcpy(name, name_obj->str_data, name_obj->d.str_len);
+
+    return intern_symbol(env, name);
 }
 
 DEFUN(length) {
@@ -42,6 +105,33 @@ DEFUN(length) {
     r->d.integer = result;
 
     return r;
+}
+
+DEFUN(make_symbol) {
+    UNUSED(caller_level);
+
+    if (list_length(env, args) != 1) {
+        signal_error_s(env, "just 1 argument expected");
+        return NULL;
+    }
+
+    risp_object *name_obj = eval_exp(env, args->d.cons.car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (name_obj->type != T_STRING) {
+        signal_error_s(env, "Name must be a string");
+        return NULL;
+    }
+
+    risp_eobject *name = register_ephemeral_object(env, name_obj);
+    risp_object *sym = alloc_str_like(env, name_obj->d.str_len);
+    sym->type = T_SYMBOL;
+    memcpy(sym->str_data, name->o->str_data, name->o->d.str_len);
+    unregister_ephemeral_object(env, name);
+
+    return sym;
 }
 
 DEFUN(plus) {
