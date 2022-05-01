@@ -109,6 +109,7 @@ int main(int argc, char **argv) {
     }
 
 clean:
+    token_free(lex.tk);
     var_frame_free_all(&env);
     free(env.heap);
 

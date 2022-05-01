@@ -4,8 +4,10 @@
 #include "parse.h"
 
 void token_free(token *tk) {
-    free(tk->text);
-    free(tk);
+    if (tk != NULL) {
+        free(tk->text);
+        free(tk);
+    }
 }
 
 void risp_error_init(risp_error *err) {
@@ -229,4 +231,7 @@ token *get_token(lexer *lex, risp_error *err) {
     return result;
 }
 
-void unget_token(lexer *lex, token *tk) { lex->tk = tk; }
+void unget_token(lexer *lex, token *tk) {
+    token_free(lex->tk);
+    lex->tk = tk;
+}

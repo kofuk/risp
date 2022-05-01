@@ -679,6 +679,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         return r;
     } else {
+        token_free(tk);
+
         err->has_error = true;
         err->line = lex->state->line;
         err->column = lex->state->column;
