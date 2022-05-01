@@ -55,17 +55,28 @@ token *get_token(lexer *lex, risp_error *err) {
 
     token *result = malloc(sizeof(token));
     result->text = NULL;
-    if (c == '(') {
+    switch (c) {
+    case '(':
         result->type = TK_LPAREN;
-    } else if (c == ')') {
+        break;
+
+    case ')':
         result->type = TK_RPAREN;
-    } else if (c == '.') {
+        break;
+
+    case '.':
         result->type = TK_DOT;
-    } else if (c == '\'') {
+        break;
+
+    case '\'':
         result->type = TK_QUOTE;
-    } else if (c == '`') {
+        break;
+
+    case '`':
         result->type = TK_BACKQUOTE;
-    } else if (c == ',') {
+        break;
+
+    case ',': {
         bool is_unquote;
         c = lex->getc(lex);
         if (c == EOF) {
@@ -82,7 +93,9 @@ token *get_token(lexer *lex, risp_error *err) {
         } else {
             result->type = TK_SPLICE;
         }
-    } else if (c == '#') {
+        break;
+    }
+    case '#':
         c = lex->getc(lex);
         if (c == EOF) {
             free(result);
@@ -105,7 +118,19 @@ token *get_token(lexer *lex, risp_error *err) {
         lex->state->column++;
 
         result->type = TK_FUNQUOTE;
-    } else if (isdigit(c) || c == '-') {
+        break;
+
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+    case '-': {
         usize len = 1;
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
@@ -157,7 +182,10 @@ token *get_token(lexer *lex, risp_error *err) {
 
         result->type = TK_INT;
         result->text = text;
-    } else if (c == '"') {
+        break;
+    }
+
+    case '"': {
         usize len = 0;
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
@@ -194,7 +222,10 @@ token *get_token(lexer *lex, risp_error *err) {
 
         result->type = TK_STRING;
         result->text = text;
-    } else {
+        break;
+    }
+
+    default: {
     scan_as_sym:;
         usize len = 1;
         usize cap = 4;
@@ -228,6 +259,8 @@ token *get_token(lexer *lex, risp_error *err) {
         }
         result->text = text;
     }
+    }
+
     return result;
 }
 
