@@ -4,8 +4,8 @@
 #include <string.h>
 
 #include "parse.h"
-#include "rt.h"
 #include "primitive.h"
+#include "rt.h"
 
 #define FLAG_ALWAYS_GC (1)
 
@@ -680,7 +680,6 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         r->d.integer = strtoll(tk->text, NULL, 0);
         token_free(tk);
         return r;
-
     }
 
     case TK_STRING: {
@@ -868,6 +867,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "-", RISP_FUNC(minus));
     register_native_function(env, "*", RISP_FUNC(multiply));
     register_native_function(env, "/", RISP_FUNC(divide));
+    register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "function", RISP_FUNC(quote));
     register_native_function(env, "intern", RISP_FUNC(intern));

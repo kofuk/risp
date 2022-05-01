@@ -17,6 +17,52 @@ static i64 list_length(risp_env *env, risp_object *list) {
     return result;
 }
 
+DEFUN(defun) {
+    UNUSED(caller_level);
+
+    if (list_length(env, args) < 3) {
+        signal_error_s(env, "function name and argument required");
+        return NULL;
+    }
+
+    risp_object *func_sym = args->d.cons.car;
+    risp_object *func_arg = args->d.cons.cdr->d.cons.car;
+    risp_object *func_body = args->d.cons.cdr->d.cons.cdr;
+
+    if (func_sym->type != T_SYMBOL) {
+        signal_error_s(env, "function name must be a symbol");
+        return NULL;
+    }
+
+    for (risp_object *a = func_arg; a != &Qnil; a = a->d.cons.cdr) {
+        if (a->type != T_SYMBOL) {
+            signal_error_s(env, "argument must be a symbol");
+            return NULL;
+        }
+    }
+
+    risp_eobject *es = register_ephemeral_object(env, func_sym);
+    risp_eobject *ea = register_ephemeral_object(env, func_arg);
+    risp_eobject *eb = register_ephemeral_object(env, func_body);
+
+    risp_eobject *func = register_ephemeral_object(env, alloc_object(env));
+    func->o->type = T_FUNC;
+    func->o->d.func.arglist = ea->o;
+    func->o->d.func.body = eb->o;
+    func->o->d.func.level = 1;
+
+    make_global_variable(env, es, func);
+
+    func_sym = es->o;
+
+    unregister_ephemeral_object(env, func);
+    unregister_ephemeral_object(env, eb);
+    unregister_ephemeral_object(env, ea);
+    unregister_ephemeral_object(env, es);
+
+    return func_sym;
+}
+
 DEFUN(divide) {
     if (list_length(env, args) == 0) {
         signal_error_s(env, "1 or more arguments required");

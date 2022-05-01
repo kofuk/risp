@@ -6,6 +6,7 @@
 #define DEFUN(name) risp_object *RISP_DEFUN_##name(risp_env *env, risp_object *args, u32 caller_level)
 #define RISP_FUNC(name) RISP_DEFUN_##name
 
+DEFUN(defun);
 DEFUN(divide);
 DEFUN(eq);
 DEFUN(intern);
