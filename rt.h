@@ -77,7 +77,7 @@ void signal_error_s(risp_env *env, const char *msg);
 risp_object *get_error(risp_env *env);
 void clear_error(risp_env *env);
 
-risp_object *eval_exp(risp_env *env, risp_object *exp);
+risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level);
 
 risp_object *alloc_object(risp_env *env);
 risp_object *alloc_str_like(risp_env *env, usize len);

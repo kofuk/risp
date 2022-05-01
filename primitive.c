@@ -17,9 +17,53 @@ static i64 list_length(risp_env *env, risp_object *list) {
     return result;
 }
 
-DEFUN(eq) {
-    UNUSED(caller_level);
+DEFUN(divide) {
+    if (list_length(env, args) == 0) {
+        signal_error_s(env, "1 or more arguments required");
+        return NULL;
+    }
 
+    i64 result = 0;
+
+    risp_eobject *cur = register_ephemeral_object(env, args);
+    bool first = true;
+
+    while (cur->o != &Qnil) {
+        risp_object *target = eval_exp(env, cur->o->d.cons.car, caller_level);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, cur);
+            return NULL;
+        }
+
+        if (target->type != T_INT) {
+            unregister_ephemeral_object(env, cur);
+
+            signal_error_s(env, "argument type must be int");
+            return NULL;
+        }
+
+        if (first) {
+            result = target->d.integer;
+            first = false;
+        } else {
+            result /= target->d.integer;
+        }
+
+        risp_object *prev = cur->o;
+        unregister_ephemeral_object(env, cur);
+        cur = register_ephemeral_object(env, prev->d.cons.cdr);
+    }
+
+    unregister_ephemeral_object(env, cur);
+
+    risp_object *r = alloc_object(env);
+    r->type = T_INT;
+    r->d.integer = result;
+
+    return r;
+}
+
+DEFUN(eq) {
     if (list_length(env, args) != 2) {
         signal_error_s(env, "2 arguments expected");
         return NULL;
@@ -27,7 +71,7 @@ DEFUN(eq) {
 
     risp_eobject *arg2 = register_ephemeral_object(env, args->d.cons.cdr->d.cons.car);
 
-    risp_object *o1 = eval_exp(env, args->d.cons.car);
+    risp_object *o1 = eval_exp(env, args->d.cons.car, caller_level);
     if (get_error(env) != &Qnil) {
         unregister_ephemeral_object(env, arg2);
         return NULL;
@@ -35,7 +79,7 @@ DEFUN(eq) {
 
     risp_eobject *eo1 = register_ephemeral_object(env, o1);
 
-    risp_object *o2 = eval_exp(env, arg2->o);
+    risp_object *o2 = eval_exp(env, arg2->o, caller_level);
     unregister_ephemeral_object(env, arg2);
     if (get_error(env) != &Qnil) {
         unregister_ephemeral_object(env, eo1);
@@ -53,14 +97,12 @@ DEFUN(eq) {
 }
 
 DEFUN(intern) {
-    UNUSED(caller_level);
-
     if (list_length(env, args) != 1) {
         signal_error_s(env, "just 1 argument expected");
         return NULL;
     }
 
-    risp_object *name_obj = eval_exp(env, args->d.cons.car);
+    risp_object *name_obj = eval_exp(env, args->d.cons.car, caller_level);
     if (get_error(env) != &Qnil) {
         return NULL;
     }
@@ -78,15 +120,13 @@ DEFUN(intern) {
 }
 
 DEFUN(length) {
-    UNUSED(caller_level);
-
     if (list_length(env, args) != 1) {
         signal_error_s(env, "just 1 argument expected");
         return NULL;
     }
 
     i64 result = 0;
-    risp_object *target = eval_exp(env, args->d.cons.car);
+    risp_object *target = eval_exp(env, args->d.cons.car, caller_level);
 
     if (get_error(env) != &Qnil) {
         return NULL;
@@ -108,14 +148,12 @@ DEFUN(length) {
 }
 
 DEFUN(make_symbol) {
-    UNUSED(caller_level);
-
     if (list_length(env, args) != 1) {
         signal_error_s(env, "just 1 argument expected");
         return NULL;
     }
 
-    risp_object *name_obj = eval_exp(env, args->d.cons.car);
+    risp_object *name_obj = eval_exp(env, args->d.cons.car, caller_level);
     if (get_error(env) != &Qnil) {
         return NULL;
     }
@@ -134,9 +172,110 @@ DEFUN(make_symbol) {
     return sym;
 }
 
-DEFUN(plus) {
+DEFUN(minus) {
     UNUSED(caller_level);
 
+    i64 len = list_length(env, args);
+    if (len == 1) {
+        // negate mode
+        risp_object *arg = eval_exp(env, args->d.cons.car, caller_level);
+
+        if (get_error(env) != &Qnil) {
+            return NULL;
+        }
+
+        if (arg->type != T_INT) {
+            signal_error_s(env, "integer argument required");
+            return NULL;
+        }
+
+        i64 val = arg->d.integer;
+
+        risp_object *r = alloc_object(env);
+        r->type = T_INT;
+        r->d.integer = -val;
+
+        return r;
+    }
+
+    // subtract mode
+
+    i64 result = 0;
+
+    risp_eobject *cur = register_ephemeral_object(env, args);
+    bool first = true;
+
+    while (cur->o != &Qnil) {
+        risp_object *target = eval_exp(env, cur->o->d.cons.car, caller_level);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, cur);
+            return NULL;
+        }
+
+        if (target->type != T_INT) {
+            unregister_ephemeral_object(env, cur);
+
+            signal_error_s(env, "argument type must be int");
+            return NULL;
+        }
+
+        if (first) {
+            result = target->d.integer;
+            first = false;
+        } else {
+            result -= target->d.integer;
+        }
+
+        risp_object *prev = cur->o;
+        unregister_ephemeral_object(env, cur);
+        cur = register_ephemeral_object(env, prev->d.cons.cdr);
+    }
+
+    unregister_ephemeral_object(env, cur);
+
+    risp_object *r = alloc_object(env);
+    r->type = T_INT;
+    r->d.integer = result;
+
+    return r;
+}
+
+DEFUN(multiply) {
+    i64 result = 1;
+
+    risp_eobject *cur = register_ephemeral_object(env, args);
+
+    while (cur->o != &Qnil) {
+        risp_object *target = eval_exp(env, cur->o->d.cons.car, caller_level);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, cur);
+            return NULL;
+        }
+
+        if (target->type != T_INT) {
+            unregister_ephemeral_object(env, cur);
+
+            signal_error_s(env, "argument type must be int");
+            return NULL;
+        }
+
+        result *= target->d.integer;
+
+        risp_object *prev = cur->o;
+        unregister_ephemeral_object(env, cur);
+        cur = register_ephemeral_object(env, prev->d.cons.cdr);
+    }
+
+    unregister_ephemeral_object(env, cur);
+
+    risp_object *r = alloc_object(env);
+    r->type = T_INT;
+    r->d.integer = result;
+
+    return r;
+}
+
+DEFUN(plus) {
     risp_eobject *result = register_ephemeral_object(env, alloc_object(env));
     result->o->type = T_INT;
     result->o->d.integer = 0;
@@ -144,7 +283,7 @@ DEFUN(plus) {
     risp_eobject *cur = register_ephemeral_object(env, args);
 
     while (cur->o != &Qnil) {
-        risp_object *target = eval_exp(env, cur->o->d.cons.car);
+        risp_object *target = eval_exp(env, cur->o->d.cons.car, caller_level);
         if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, cur);
             unregister_ephemeral_object(env, result);
@@ -173,12 +312,10 @@ DEFUN(plus) {
 }
 
 DEFUN(print) {
-    UNUSED(caller_level);
-
     risp_eobject *cur = register_ephemeral_object(env, args);
 
     while (cur->o != &Qnil) {
-        risp_object *target = eval_exp(env, cur->o->d.cons.car);
+        risp_object *target = eval_exp(env, cur->o->d.cons.car, caller_level);
         if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
@@ -212,8 +349,6 @@ DEFUN(quote) {
 }
 
 DEFUN(setq) {
-    UNUSED(caller_level);
-
     if (list_length(env, args) % 2 != 0) {
         signal_error_s(env, "wrong argument count");
         return NULL;
@@ -229,7 +364,7 @@ DEFUN(setq) {
             return NULL;
         }
         risp_eobject *sym = register_ephemeral_object(env, cur->o->d.cons.car);
-        risp_object *val = eval_exp(env, cur->o->d.cons.cdr->d.cons.car);
+        risp_object *val = eval_exp(env, cur->o->d.cons.cdr->d.cons.car, caller_level);
         if (get_error(env) != &Qnil) {
             unregister_ephemeral_object(env, sym);
             unregister_ephemeral_object(env, last);

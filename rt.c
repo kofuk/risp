@@ -401,7 +401,7 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
-risp_object *eval_exp(risp_env *env, risp_object *exp) {
+risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
     if (exp == &Qnil) {
         return &Qnil;
     } else if (exp == &Qt) {
@@ -422,7 +422,7 @@ risp_object *eval_exp(risp_env *env, risp_object *exp) {
         }
 
         if (func->type == T_NATIVE_FUNC) {
-            return func->d.native_func(env, exp->d.cons.cdr, 0);
+            return func->d.native_func(env, exp->d.cons.cdr, caller_level);
         } else if (func->type == T_FUNC) {
             // TODO: call functions in lisp world
         } else {
@@ -818,8 +818,10 @@ static void repr_object(risp_env *env, risp_object *obj) {
 i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
+
+    char *prompt_orig = lex->rl_prompt;
     risp_object *sexp = read_exp(lex, &err, env);
-    lex->rl_prompt = ">>> ";
+    lex->rl_prompt = prompt_orig;
     if (sexp == NULL) {
         if (err.has_error) {
             fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);
@@ -828,7 +830,7 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
         return 0;
     }
 
-    risp_object *result = eval_exp(env, sexp);
+    risp_object *result = eval_exp(env, sexp, 1);
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != &Qnil) {
@@ -863,6 +865,9 @@ static inline void register_native_function(risp_env *env, const char *name, ris
 
 void init_native_functions(risp_env *env) {
     register_native_function(env, "+", RISP_FUNC(plus));
+    register_native_function(env, "-", RISP_FUNC(minus));
+    register_native_function(env, "*", RISP_FUNC(multiply));
+    register_native_function(env, "/", RISP_FUNC(divide));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "function", RISP_FUNC(quote));
     register_native_function(env, "intern", RISP_FUNC(intern));
