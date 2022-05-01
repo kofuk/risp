@@ -1144,8 +1144,10 @@ static i32 read_and_eval(lexer *lex, risp_env *env) {
         return lex->repl ? 1 : -1;
     }
 
-    repr_object(env, result);
-    putchar('\n');
+    if (lex->repl) {
+        repr_object(env, result);
+        putchar('\n');
+    }
 
     return 1;
 }
