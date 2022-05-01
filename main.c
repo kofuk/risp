@@ -262,14 +262,15 @@ static risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj) 
     risp_eobject *eo = malloc(sizeof(risp_eobject));
     eo->o = obj;
     eo->next = env->ephemeral;
+    env->ephemeral = eo;
     return eo;
 }
 
 static void unregister_ephemeral_object(risp_env *env, risp_eobject *registered) {
-    for (risp_eobject *eo = env->ephemeral, *prev = NULL; eo; eo = eo->next) {
+    for (risp_eobject *eo = env->ephemeral, *prev = NULL; eo != NULL; eo = eo->next) {
         if (eo == registered) {
             if (prev == NULL) {
-                env->ephemeral = eo;
+                env->ephemeral = eo->next;
             } else {
                 prev->next = eo->next;
             }
@@ -277,13 +278,6 @@ static void unregister_ephemeral_object(risp_env *env, risp_eobject *registered)
             return;
         }
         prev = eo;
-    }
-}
-
-static void ephemeral_object_free_all(risp_env *env) {
-    for (risp_eobject *eo = env->ephemeral, *next; eo; eo = next) {
-        next = eo->next;
-        free(eo);
     }
 }
 
@@ -358,7 +352,7 @@ static void signal_error_s(risp_env *env, const char *msg) {
     signal_error(env, err);
 }
 
-static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
+static void push_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     risp_vars *parent_scope;
 
     if (caller_level < callee_level) {
@@ -372,9 +366,18 @@ static void push_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     }
 
     risp_vars *vars = malloc(sizeof(risp_vars));
+    vars->vars = &Qnil;
     vars->parent = parent_scope;
     vars->prev = env->var_list;
     env->var_list = vars;
+}
+
+static void var_frame_free_all(risp_env *env) {
+    for (risp_vars * vars = env->var_list; vars != NULL;) {
+        risp_vars *prev = vars->prev;
+        free(vars);
+        vars = prev;
+    }
 }
 
 static void env_init(risp_env *env) {
@@ -391,7 +394,7 @@ static void env_init(risp_env *env) {
         env->flags |= FLAG_ALWAYS_GC;
     }
 
-    push_frame(env, 0, 1);
+    push_var_frame(env, 0, 1);
 }
 
 static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
@@ -424,7 +427,7 @@ static risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
 static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
     assert(symbol->o->type == T_SYMBOL);
 
-    for (risp_object *var = vars->vars; var; var = var->d.cons.cdr) {
+    for (risp_object *var = vars->vars; var != &Qnil; var = var->d.cons.cdr) {
         assert(var->type == T_CONS);
 
         risp_object *var_cons = var->d.cons.car;
@@ -1433,8 +1436,8 @@ int main(int argc, char **argv) {
     }
 
 clean:
+    var_frame_free_all(&env);
     free(env.heap);
-    ephemeral_object_free_all(&env);
 
     if (lex.infile != NULL) {
         fclose(lex.infile);
