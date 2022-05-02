@@ -301,7 +301,15 @@ void signal_error_s(risp_env *env, const char *msg) {
 /**
  * Push a new variable table to stack.
  */
-static void push_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
+static void push_var_frame(risp_env *env, risp_vars *vars) {
+    env->var_list = vars;
+}
+
+/**
+ * Prepare a new variable table.
+ * Returned value must pass to `push_var_frame'.
+ */
+static risp_vars *make_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     risp_vars *parent_scope;
 
     if (caller_level < callee_level) {
@@ -318,7 +326,14 @@ static void push_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     vars->vars = &Qnil;
     vars->parent = parent_scope;
     vars->prev = env->var_list;
-    env->var_list = vars;
+
+    return vars;
+}
+
+static void pop_var_frame(risp_env *env) {
+    risp_vars *prev = env->var_list->prev;
+    free(env->var_list);
+    env->var_list = prev;
 }
 
 /**
@@ -349,7 +364,7 @@ void env_init(risp_env *env) {
         env->flags |= FLAG_ALWAYS_GC;
     }
 
-    push_var_frame(env, 0, 1);
+    push_var_frame(env, make_var_frame(env, 0, 1));
 }
 
 /**
@@ -382,7 +397,7 @@ static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
 risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     risp_object *cons = lookup_variable_cons(env, symbol);
     if (cons == &Qnil) {
-        return &Qnil;
+        return NULL;
     }
     return cons->cdr;
 }
@@ -502,6 +517,50 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
+static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args, u32 caller_level) {
+    risp_vars *vars = make_var_frame(env, caller_level, 1);
+    push_var_frame(env, vars);
+    return true;
+}
+
+static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args, u32 caller_level) {
+    risp_eobject *efunc = register_ephemeral_object(env, func);
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+    if (!prepare_function_var_stack(env, func->func.arglist, args, caller_level)) {
+        unregister_ephemeral_object(env, eargs);
+        unregister_ephemeral_object(env, efunc);
+
+        return NULL;
+    }
+
+    unregister_ephemeral_object(env, eargs);
+
+    risp_eobject *body = register_ephemeral_object(env, efunc->o->func.body);
+    unregister_ephemeral_object(env, efunc);
+
+    risp_object *result = &Qnil;
+
+    while (body->o != &Qnil) {
+        result = eval_exp(env, body->o->car, 0);
+        if (get_error(env) != &Qnil) {
+            pop_var_frame(env);
+
+            unregister_ephemeral_object(env, body);
+            return NULL;
+        }
+
+        risp_object *next = body->o->cdr;
+        unregister_ephemeral_object(env, body);
+        body  = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, body);
+
+    pop_var_frame(env);
+
+    return result;
+}
+
 /**
  * Evaluate anything and return the result.
  *
@@ -530,7 +589,7 @@ risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
         if (func->type == T_NATIVE_FUNC) {
             return func->native_func(env, exp->cdr, caller_level);
         } else if (func->type == T_FUNC) {
-            // TODO: call functions in lisp world
+            return call_risp_function(env, func, exp->cdr, caller_level);
         } else {
             signal_error_s(env, "void function");
         }
@@ -547,7 +606,7 @@ risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
 
     case T_SYMBOL: {
         risp_object *obj = lookup_symbol(env, exp);
-        if (obj == &Qnil) {
+        if (obj == NULL) {
             signal_error_s(env, "void variable");
             return NULL;
         }
@@ -957,7 +1016,7 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
         return 0;
     }
 
-    risp_object *result = eval_exp(env, sexp, 1);
+    risp_object *result = eval_exp(env, sexp, 0);
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != &Qnil) {
