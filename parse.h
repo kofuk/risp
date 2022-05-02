@@ -46,11 +46,13 @@ typedef struct lexer {
 
     int (*getc)(struct lexer *);
     int (*ungetc)(int, struct lexer *);
+#ifdef HAVE_READLINE
     char *rl_prompt;
     char *rl_line;
     size_t rl_cursor;
     int rl_unget;
     bool rl_nul_read;
+#endif
     bool repl;
 } lexer;
 

@@ -8,8 +8,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef HAVE_READLINE
 #include <readline/history.h>
 #include <readline/readline.h>
+#endif
 
 #include "parse.h"
 #include "risp.h"
@@ -19,6 +21,7 @@ static int file_getc(lexer *lex) { return fgetc(lex->infile); }
 
 static int file_ungetc(int c, lexer *lex) { return ungetc(c, lex->infile); }
 
+#ifdef HAVE_READLINE
 static int readline_getc(lexer *lex) {
     if (lex->rl_unget >= 0) {
         int c = lex->rl_unget;
@@ -54,28 +57,35 @@ static int readline_ungetc(int c, lexer *lex) {
     lex->rl_unget = c;
     return c;
 }
+#endif
 
 int main(int argc, char **argv) {
     lexer lex = {
+#if HAVE_READLINE
         .rl_prompt = ">>> ",
         .rl_line = NULL,
         .rl_cursor = 0,
         .rl_unget = -1,
         .rl_nul_read = true,
+#endif
         .repl = false,
     };
 
     if (argc < 2) {
         lex.in_name = "<stdin>";
+#ifdef HAVE_READLINE
         if (isatty(STDIN_FILENO)) {
             lex.getc = &readline_getc;
             lex.ungetc = &readline_ungetc;
             lex.repl = true;
         } else {
+#endif
             lex.infile = stdin;
             lex.getc = &file_getc;
             lex.ungetc = &file_ungetc;
+#ifdef HAVE_READLINE
         }
+#endif
     } else {
         FILE *infile = fopen(argv[1], "r");
         if (infile == NULL) {

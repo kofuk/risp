@@ -569,7 +569,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     if (tk == NULL) {
         return NULL;
     }
+#if HAVE_READLINE
     lex->rl_prompt = "... ";
+#endif
 
     switch (tk->type) {
     case TK_LPAREN:
@@ -803,9 +805,13 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
 
+#ifdef HAVE_READLINE
     char *prompt_orig = lex->rl_prompt;
+#endif
     risp_object *sexp = read_exp(lex, &err, env);
+#ifdef HAVE_READLINE
     lex->rl_prompt = prompt_orig;
+#endif
     if (sexp == NULL) {
         if (err.has_error) {
             fprintf(stderr, "%s: %d: %d: %s\n", lex->in_name, err.line, err.column, err.message);

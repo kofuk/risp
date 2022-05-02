@@ -1,0 +1,6 @@
+option(
+  'readline',
+  type : 'feature',
+  value : 'enabled',
+  description : 'Build with readline support (required for REPL)'
+)
