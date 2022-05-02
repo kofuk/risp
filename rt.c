@@ -12,15 +12,15 @@
 risp_object Qnil = {
     .type = T_CONS,
     .size = sizeof(risp_object),
-    .d.cons.car = NULL,
-    .d.cons.cdr = NULL,
+    .car = NULL,
+    .cdr = NULL,
 };
 
 risp_object Qt = {
     .type = T_CONS,
     .size = sizeof(risp_object),
-    .d.cons.car = NULL,
-    .d.cons.cdr = NULL,
+    .car = NULL,
+    .cdr = NULL,
 };
 
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
@@ -86,43 +86,43 @@ static void run_gc(risp_env *env) {
     while (scan_ptr < free_ptr) {
         switch (scan_ptr->type) {
         case T_CONS:
-            if (scan_ptr->d.cons.car != &Qnil) {
-                if (scan_ptr->d.cons.car->forwarding == NULL) {
-                    new_len += copy_object(free_ptr, scan_ptr->d.cons.car);
-                    scan_ptr->d.cons.car = free_ptr;
+            if (scan_ptr->car != &Qnil) {
+                if (scan_ptr->car->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->car);
+                    scan_ptr->car = free_ptr;
                     free_ptr = (void *)((char *)new_heap + new_len);
                 } else {
-                    scan_ptr->d.cons.car = scan_ptr->d.cons.car->forwarding;
+                    scan_ptr->car = scan_ptr->car->forwarding;
                 }
             }
-            if (scan_ptr->d.cons.cdr != &Qnil) {
-                if (scan_ptr->d.cons.cdr->forwarding == NULL) {
-                    new_len += copy_object(free_ptr, scan_ptr->d.cons.cdr);
-                    scan_ptr->d.cons.cdr = free_ptr;
+            if (scan_ptr->cdr != &Qnil) {
+                if (scan_ptr->cdr->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->cdr);
+                    scan_ptr->cdr = free_ptr;
                     free_ptr = (void *)((char *)new_heap + new_len);
                 } else {
-                    scan_ptr->d.cons.cdr = scan_ptr->d.cons.cdr->forwarding;
+                    scan_ptr->cdr = scan_ptr->cdr->forwarding;
                 }
             }
             break;
 
         case T_FUNC:
-            if (scan_ptr->d.func.arglist != &Qnil) {
-                if (scan_ptr->d.func.arglist->forwarding == NULL) {
-                    new_len += copy_object(free_ptr, scan_ptr->d.func.arglist);
-                    scan_ptr->d.func.arglist = free_ptr;
+            if (scan_ptr->func.arglist != &Qnil) {
+                if (scan_ptr->func.arglist->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->func.arglist);
+                    scan_ptr->func.arglist = free_ptr;
                     free_ptr = (void *)((char *)new_heap + new_len);
                 } else {
-                    scan_ptr->d.func.arglist = scan_ptr->d.func.arglist->forwarding;
+                    scan_ptr->func.arglist = scan_ptr->func.arglist->forwarding;
                 }
             }
-            if (scan_ptr->d.func.body != &Qnil) {
-                if (scan_ptr->d.func.body->forwarding == NULL) {
-                    new_len += copy_object(free_ptr, scan_ptr->d.func.body);
-                    scan_ptr->d.func.body = free_ptr;
+            if (scan_ptr->func.body != &Qnil) {
+                if (scan_ptr->func.body->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->func.body);
+                    scan_ptr->func.body = free_ptr;
                     free_ptr = (void *)((char *)new_heap + new_len);
                 } else {
-                    scan_ptr->d.func.body = scan_ptr->d.func.body->forwarding;
+                    scan_ptr->func.body = scan_ptr->func.body->forwarding;
                 }
             }
             break;
@@ -211,7 +211,7 @@ risp_object *alloc_str_like(risp_env *env, risp_type type, usize len) {
     r->type = type;
     r->size = alloc_size;
     r->forwarding = NULL;
-    r->d.str_len = len;
+    r->str_len = len;
     env->heap_len += alloc_size;
     return r;
 }
@@ -234,7 +234,7 @@ void signal_error_s(risp_env *env, const char *msg) {
     size_t len = strlen(msg);
     risp_object *err = alloc_str_like(env, T_STRING, len);
     memcpy(err->str_data, msg, len);
-    err->d.str_len = len;
+    err->str_len = len;
     signal_error(env, err);
 }
 
@@ -287,13 +287,13 @@ static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
     assert(symbol->type == T_SYMBOL);
 
     for (risp_vars *target = env->var_list; target != NULL; target = target->parent) {
-        for (risp_object *vars = target->vars; vars != &Qnil; vars = vars->d.cons.cdr) {
+        for (risp_object *vars = target->vars; vars != &Qnil; vars = vars->cdr) {
             assert(vars->type == T_CONS);
 
-            risp_object *var = vars->d.cons.car;
+            risp_object *var = vars->car;
             assert(var->type == T_CONS);
 
-            if (symbol == var->d.cons.car) {
+            if (symbol == var->car) {
                 return var;
             }
         }
@@ -307,34 +307,34 @@ risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     if (cons == &Qnil) {
         return &Qnil;
     }
-    return cons->d.cons.cdr;
+    return cons->cdr;
 }
 
 static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
     assert(symbol->o->type == T_SYMBOL);
 
-    for (risp_object *var = vars->vars; var != &Qnil; var = var->d.cons.cdr) {
+    for (risp_object *var = vars->vars; var != &Qnil; var = var->cdr) {
         assert(var->type == T_CONS);
 
-        risp_object *var_cons = var->d.cons.car;
+        risp_object *var_cons = var->car;
         assert(var_cons->type == T_CONS);
-        assert(var_cons->d.cons.car->type == T_SYMBOL);
+        assert(var_cons->car->type == T_SYMBOL);
 
-        if (symbol->o == var_cons->d.cons.car) {
-            var_cons->d.cons.cdr = value->o;
+        if (symbol->o == var_cons->car) {
+            var_cons->cdr = value->o;
             return;
         }
     }
 
     risp_eobject *list_element = register_ephemeral_object(env, alloc_object(env, T_CONS));
-    list_element->o->d.cons.cdr = vars->vars;
+    list_element->o->cdr = vars->vars;
     vars->vars = list_element->o;
 
     risp_object *cons = alloc_object(env, T_CONS);
-    cons->d.cons.car = symbol->o;
-    cons->d.cons.cdr = value->o;
+    cons->car = symbol->o;
+    cons->cdr = value->o;
 
-    list_element->o->d.cons.car = cons;
+    list_element->o->car = cons;
 
     unregister_ephemeral_object(env, list_element);
 }
@@ -358,20 +358,20 @@ void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
         make_global_variable(env, symbol, value);
         return;
     }
-    cons->d.cons.cdr = value->o;
+    cons->cdr = value->o;
 }
 
 risp_object *intern_symbol(risp_env *env, const char *name) {
     usize name_len = strlen(name);
 
     if (env->obarray != &Qnil) {
-        for (risp_object *obj = env->obarray; obj != &Qnil; obj = obj->d.cons.cdr) {
+        for (risp_object *obj = env->obarray; obj != &Qnil; obj = obj->cdr) {
             assert(obj->type == T_CONS);
 
-            risp_object *sym = obj->d.cons.car;
+            risp_object *sym = obj->car;
             assert(sym->type == T_SYMBOL || sym->type == T_KWSYMBOL);
 
-            if (sym->d.str_len == name_len) {
+            if (sym->str_len == name_len) {
                 if (!memcmp(sym->str_data, name, name_len)) {
                     return sym;
                 }
@@ -380,12 +380,12 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     }
 
     risp_eobject *cons = register_ephemeral_object(env, alloc_object(env, T_CONS));
-    cons->o->d.cons.cdr = env->obarray;
+    cons->o->cdr = env->obarray;
 
     risp_type type = name[0] == ':' ? T_KWSYMBOL : T_SYMBOL;
     risp_object *sym = alloc_str_like(env, type, name_len);
     memcpy(sym->str_data, name, name_len);
-    cons->o->d.cons.car = sym;
+    cons->o->car = sym;
 
     env->obarray = cons->o;
 
@@ -403,19 +403,19 @@ risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
 
     switch (exp->type) {
     case T_CONS: {
-        if (exp->d.cons.car->type != T_SYMBOL) {
+        if (exp->car->type != T_SYMBOL) {
             signal_error_s(env, "void function");
             return NULL;
         }
 
-        risp_object *func = lookup_symbol(env, exp->d.cons.car);
+        risp_object *func = lookup_symbol(env, exp->car);
         if (func == NULL) {
             signal_error_s(env, "void function");
             return NULL;
         }
 
         if (func->type == T_NATIVE_FUNC) {
-            return func->d.native_func(env, exp->d.cons.cdr, caller_level);
+            return func->native_func(env, exp->cdr, caller_level);
         } else if (func->type == T_FUNC) {
             // TODO: call functions in lisp world
         } else {
@@ -468,7 +468,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
         unregister_ephemeral_object(env, root);
         return NULL;
     }
-    root->o->d.cons.car = obj;
+    root->o->car = obj;
 
     tk = get_token(lex, err);
     if (tk == NULL) {
@@ -479,7 +479,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
         risp_object *r = root->o;
         unregister_ephemeral_object(env, root);
 
-        r->d.cons.cdr = &Qnil;
+        r->cdr = &Qnil;
         return r;
     } else if (tk->type == TK_DOT) {
         // this is cons.
@@ -489,7 +489,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
             unregister_ephemeral_object(env, root);
             return NULL;
         }
-        root->o->d.cons.cdr = obj;
+        root->o->cdr = obj;
 
         tk = get_token(lex, err);
         if (tk == NULL) {
@@ -542,14 +542,14 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
             return NULL;
         }
 
-        cons->o->d.cons.car = obj;
+        cons->o->car = obj;
 
-        prev->o->d.cons.cdr = cons->o;
+        prev->o->cdr = cons->o;
         unregister_ephemeral_object(env, prev);
         prev = cons;
     }
 
-    prev->o->d.cons.cdr = &Qnil;
+    prev->o->cdr = &Qnil;
     risp_object *first = root->o;
     unregister_ephemeral_object(env, root);
     unregister_ephemeral_object(env, prev);
@@ -588,8 +588,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         if (err->has_error) {
             return NULL;
         }
-        cons->d.cons.car = quote;
-        cons->d.cons.cdr = inner;
+        cons->car = quote;
+        cons->cdr = inner;
         return cons;
     }
 
@@ -605,8 +605,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         if (err->has_error) {
             return NULL;
         }
-        cons->d.cons.car = backquote;
-        cons->d.cons.cdr = inner;
+        cons->car = backquote;
+        cons->cdr = inner;
         return cons;
     }
 
@@ -622,8 +622,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         if (err->has_error) {
             return NULL;
         }
-        cons->d.cons.car = unquote;
-        cons->d.cons.cdr = inner;
+        cons->car = unquote;
+        cons->cdr = inner;
         return cons;
     }
 
@@ -639,8 +639,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         if (err->has_error) {
             return NULL;
         }
-        cons->d.cons.car = splice;
-        cons->d.cons.cdr = inner;
+        cons->car = splice;
+        cons->cdr = inner;
         return cons;
     }
 
@@ -656,14 +656,14 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         if (err->has_error) {
             return NULL;
         }
-        cons->d.cons.car = function;
-        cons->d.cons.cdr = inner;
+        cons->car = function;
+        cons->cdr = inner;
         return cons;
     }
 
     case TK_INT: {
         risp_object *r = alloc_object(env, T_INT);
-        r->d.integer = strtoll(tk->text, NULL, 0);
+        r->integer = strtoll(tk->text, NULL, 0);
         token_free(tk);
         return r;
     }
@@ -717,8 +717,8 @@ static void repr_list(risp_env *env, risp_object *obj) {
         putchar(')');
     } else if (obj->type == T_CONS) {
         putchar(' ');
-        repr_object(env, obj->d.cons.car);
-        repr_list(env, obj->d.cons.cdr);
+        repr_object(env, obj->car);
+        repr_list(env, obj->cdr);
     } else {
         fputs(" . ", stdout);
         repr_object(env, obj);
@@ -738,47 +738,47 @@ static void repr_object(risp_env *env, risp_object *obj) {
     switch (obj->type) {
     case T_CONS: {
         risp_eobject *eobj = register_ephemeral_object(env, obj);
-        if (eobj->o->d.cons.car == intern_symbol(env, "quote")) {
+        if (eobj->o->car == intern_symbol(env, "quote")) {
             putchar('\'');
             obj = eobj->o;
             unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->d.cons.cdr);
-        } else if (eobj->o->d.cons.car == intern_symbol(env, "function")) {
+            repr_object(env, obj->cdr);
+        } else if (eobj->o->car == intern_symbol(env, "function")) {
             putchar('#');
             putchar('\'');
             obj = eobj->o;
             unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->d.cons.cdr);
-        } else if (eobj->o->d.cons.car == intern_symbol(env, "unquote")) {
+            repr_object(env, obj->cdr);
+        } else if (eobj->o->car == intern_symbol(env, "unquote")) {
             putchar(',');
             obj = eobj->o;
             unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->d.cons.cdr);
-        } else if (eobj->o->d.cons.car == intern_symbol(env, "splice")) {
+            repr_object(env, obj->cdr);
+        } else if (eobj->o->car == intern_symbol(env, "splice")) {
             putchar(',');
             putchar('@');
             obj = eobj->o;
             unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->d.cons.cdr);
+            repr_object(env, obj->cdr);
         } else {
             putchar('(');
-            repr_object(env, eobj->o->d.cons.car);
-            repr_list(env, obj->d.cons.cdr);
+            repr_object(env, eobj->o->car);
+            repr_list(env, obj->cdr);
         }
         break;
     }
 
     case T_STRING:
-        printf("\"%.*s\"", (int)obj->d.str_len, obj->str_data);
+        printf("\"%.*s\"", (int)obj->str_len, obj->str_data);
         break;
 
     case T_SYMBOL:
     case T_KWSYMBOL:
-        printf("%.*s", (int)obj->d.str_len, obj->str_data);
+        printf("%.*s", (int)obj->str_len, obj->str_data);
         break;
 
     case T_INT:
-        printf("%ld", obj->d.integer);
+        printf("%ld", obj->integer);
         break;
 
     case T_FUNC:
@@ -789,12 +789,12 @@ static void repr_object(risp_env *env, risp_object *obj) {
         printf("<native_func@%p>", ((union {
                                         void *p;
                                         risp_native_func func;
-                                    } *)&obj->d.native_func)
+                                    } *)&obj->native_func)
                                        ->p);
         break;
 
     case T_NATIVE_HANDLE:
-        printf("<native_handle@%p>", obj->d.native_handle);
+        printf("<native_handle@%p>", obj->native_handle);
         break;
     }
 }
@@ -838,7 +838,7 @@ static inline void register_native_function(risp_env *env, const char *name, ris
     risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env, T_NATIVE_FUNC));
     risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
 
-    func_var->o->d.native_func = func;
+    func_var->o->native_func = func;
 
     make_global_variable(env, sym, func_var);
 

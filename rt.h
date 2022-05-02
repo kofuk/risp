@@ -28,7 +28,7 @@ struct risp_object {
         struct {
             struct risp_object *car;
             struct risp_object *cdr;
-        } cons;
+        };
         usize str_len;
         i64 integer;
         struct {
@@ -38,7 +38,7 @@ struct risp_object {
         } func;
         risp_native_func native_func;
         void *native_handle;
-    } d;
+    };
     u8 str_data[];
 };
 
