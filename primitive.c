@@ -45,8 +45,7 @@ DEFUN(defun) {
     risp_eobject *ea = register_ephemeral_object(env, func_arg);
     risp_eobject *eb = register_ephemeral_object(env, func_body);
 
-    risp_eobject *func = register_ephemeral_object(env, alloc_object(env));
-    func->o->type = T_FUNC;
+    risp_eobject *func = register_ephemeral_object(env, alloc_object(env, T_FUNC));
     func->o->d.func.arglist = ea->o;
     func->o->d.func.body = eb->o;
     func->o->d.func.level = 1;
@@ -102,8 +101,7 @@ DEFUN(divide) {
 
     unregister_ephemeral_object(env, cur);
 
-    risp_object *r = alloc_object(env);
-    r->type = T_INT;
+    risp_object *r = alloc_object(env, T_INT);
     r->d.integer = result;
 
     return r;
@@ -186,8 +184,7 @@ DEFUN(length) {
         result = target->d.str_len;
     }
 
-    risp_object *r = alloc_object(env);
-    r->type = T_INT;
+    risp_object *r = alloc_object(env, T_INT);
     r->d.integer = result;
 
     return r;
@@ -210,8 +207,7 @@ DEFUN(make_symbol) {
     }
 
     risp_eobject *name = register_ephemeral_object(env, name_obj);
-    risp_object *sym = alloc_str_like(env, name_obj->d.str_len);
-    sym->type = T_SYMBOL;
+    risp_object *sym = alloc_str_like(env, T_SYMBOL, name_obj->d.str_len);
     memcpy(sym->str_data, name->o->str_data, name->o->d.str_len);
     unregister_ephemeral_object(env, name);
 
@@ -237,8 +233,7 @@ DEFUN(minus) {
 
         i64 val = arg->d.integer;
 
-        risp_object *r = alloc_object(env);
-        r->type = T_INT;
+        risp_object *r = alloc_object(env, T_INT);
         r->d.integer = -val;
 
         return r;
@@ -279,7 +274,7 @@ DEFUN(minus) {
 
     unregister_ephemeral_object(env, cur);
 
-    risp_object *r = alloc_object(env);
+    risp_object *r = alloc_object(env, T_INT);
     r->type = T_INT;
     r->d.integer = result;
 
@@ -314,16 +309,14 @@ DEFUN(multiply) {
 
     unregister_ephemeral_object(env, cur);
 
-    risp_object *r = alloc_object(env);
-    r->type = T_INT;
+    risp_object *r = alloc_object(env, T_INT);
     r->d.integer = result;
 
     return r;
 }
 
 DEFUN(plus) {
-    risp_eobject *result = register_ephemeral_object(env, alloc_object(env));
-    result->o->type = T_INT;
+    risp_eobject *result = register_ephemeral_object(env, alloc_object(env, T_INT));
     result->o->d.integer = 0;
 
     risp_eobject *cur = register_ephemeral_object(env, args);
