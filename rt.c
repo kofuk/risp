@@ -310,8 +310,8 @@ risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     return cons->cdr;
 }
 
-static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, risp_eobject *value) {
-    assert(symbol->o->type == T_SYMBOL);
+static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value) {
+    assert(symbol->type == T_SYMBOL);
 
     for (risp_object *var = vars->vars; var != &Qnil; var = var->cdr) {
         assert(var->type == T_CONS);
@@ -320,30 +320,35 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_eobject *symbol, 
         assert(var_cons->type == T_CONS);
         assert(var_cons->car->type == T_SYMBOL);
 
-        if (symbol->o == var_cons->car) {
-            var_cons->cdr = value->o;
+        if (symbol == var_cons->car) {
+            var_cons->cdr = value;
             return;
         }
     }
+
+    risp_eobject *esymbol = register_ephemeral_object(env, symbol);
+    risp_eobject *evalue = register_ephemeral_object(env, value);
 
     risp_eobject *list_element = register_ephemeral_object(env, alloc_object(env, T_CONS));
     list_element->o->cdr = vars->vars;
     vars->vars = list_element->o;
 
     risp_object *cons = alloc_object(env, T_CONS);
-    cons->car = symbol->o;
-    cons->cdr = value->o;
+    cons->car = esymbol->o;
+    cons->cdr = evalue->o;
 
     list_element->o->car = cons;
 
     unregister_ephemeral_object(env, list_element);
+    unregister_ephemeral_object(env, evalue);
+    unregister_ephemeral_object(env, esymbol);
 }
 
-void make_local_variable(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
+void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value) {
     make_variable(env, env->var_list, symbol, value);
 }
 
-void make_global_variable(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
+void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value) {
     risp_vars *vars = env->var_list;
     while (vars->prev) {
         vars = vars->prev;
@@ -352,13 +357,13 @@ void make_global_variable(risp_env *env, risp_eobject *symbol, risp_eobject *val
     make_variable(env, vars, symbol, value);
 }
 
-void scoped_set(risp_env *env, risp_eobject *symbol, risp_eobject *value) {
-    risp_object *cons = lookup_variable_cons(env, symbol->o);
+void scoped_set(risp_env *env, risp_object *symbol, risp_object *value) {
+    risp_object *cons = lookup_variable_cons(env, symbol);
     if (cons == &Qnil) {
         make_global_variable(env, symbol, value);
         return;
     }
-    cons->cdr = value->o;
+    cons->cdr = value;
 }
 
 risp_object *intern_symbol(risp_env *env, const char *name) {
@@ -841,15 +846,12 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
 }
 
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
-    risp_eobject *func_var = register_ephemeral_object(env, alloc_object(env, T_NATIVE_FUNC));
-    risp_eobject *sym = register_ephemeral_object(env, intern_symbol(env, name));
+    risp_object *func_var = alloc_object(env, T_NATIVE_FUNC);
+    risp_object *sym = intern_symbol(env, name);
 
-    func_var->o->native_func = func;
+    func_var->native_func = func;
 
     make_global_variable(env, sym, func_var);
-
-    unregister_ephemeral_object(env, sym);
-    unregister_ephemeral_object(env, func_var);
 }
 
 void init_native_functions(risp_env *env) {

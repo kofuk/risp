@@ -45,16 +45,15 @@ DEFUN(defun) {
     risp_eobject *ea = register_ephemeral_object(env, func_arg);
     risp_eobject *eb = register_ephemeral_object(env, func_body);
 
-    risp_eobject *func = register_ephemeral_object(env, alloc_object(env, T_FUNC));
-    func->o->func.arglist = ea->o;
-    func->o->func.body = eb->o;
-    func->o->func.level = 1;
+    risp_object *func =  alloc_object(env, T_FUNC);
+    func->func.arglist = ea->o;
+    func->func.body = eb->o;
+    func->func.level = 1;
 
-    make_global_variable(env, es, func);
+    make_global_variable(env, es->o, func);
 
     func_sym = es->o;
 
-    unregister_ephemeral_object(env, func);
     unregister_ephemeral_object(env, eb);
     unregister_ephemeral_object(env, ea);
     unregister_ephemeral_object(env, es);
@@ -412,7 +411,7 @@ DEFUN(setq) {
         }
 
         risp_eobject *e_val = register_ephemeral_object(env, val);
-        scoped_set(env, sym, e_val);
+        scoped_set(env, sym->o, e_val->o);
         unregister_ephemeral_object(env, last);
         unregister_ephemeral_object(env, sym);
 
