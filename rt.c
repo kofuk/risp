@@ -9,6 +9,9 @@
 
 #define FLAG_ALWAYS_GC (1)
 
+/**
+ * Value represents `nil' in the Risp world.
+ */
 risp_object Qnil = {
     .type = T_CONS,
     .size = sizeof(risp_object),
@@ -16,6 +19,9 @@ risp_object Qnil = {
     .cdr = NULL,
 };
 
+/**
+ * Value represents `t' in the Risp world.
+ */
 risp_object Qt = {
     .type = T_CONS,
     .size = sizeof(risp_object),
@@ -23,12 +29,21 @@ risp_object Qt = {
     .cdr = NULL,
 };
 
+/**
+ * Copy `old_obj' to `free_ptr' and sets `forwarding' pointer.
+ * The return value is copied size in byte.
+ */
 static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
     memcpy(free_ptr, old_obj, old_obj->size);
     old_obj->forwarding = free_ptr;
     return old_obj->size;
 }
 
+/**
+ * Runs GC.
+ * You must assume that all objects are invalid after running GC.
+ * To keep track of the object through the GC, you can `register_ephemeral_object'.
+ */
 static void run_gc(risp_env *env) {
     void *new_heap = malloc(env->heap_cap);
     usize new_len = 0;
@@ -143,6 +158,13 @@ static void run_gc(risp_env *env) {
     env->heap_len = new_len;
 }
 
+/**
+ * Register `obj' as an ephemeral object and keep track of the object and avoid freed by subsequent GC.
+ * `obj' of NULL or Qnil is permitted, and this function returns valid ephemeral object.
+ *
+ * Object returned by this function MUST be freed by passing it to `unregister_ephemeral_object' or
+ * it causes memory leak in both C world and Risp world.
+ */
 risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj) {
     risp_eobject *eo = malloc(sizeof(risp_eobject));
     eo->o = obj;
@@ -151,6 +173,10 @@ risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj) {
     return eo;
 }
 
+/**
+ * Unregisters ephemeral object.
+ * After passing object to this function, values are not defended from GC.
+ */
 void unregister_ephemeral_object(risp_env *env, risp_eobject *registered) {
     for (risp_eobject *eo = env->ephemeral, *prev = NULL; eo != NULL; eo = eo->next) {
         if (eo == registered) {
@@ -166,12 +192,27 @@ void unregister_ephemeral_object(risp_env *env, risp_eobject *registered) {
     }
 }
 
+/**
+ * Get error in Risp world.
+ * After evaluating any Risp objects, you must check that error is `Qnil'.
+ */
 risp_object *get_error(risp_env *env) { return env->error; }
 
+/**
+ * Clears error state.
+ */
 void clear_error(risp_env *env) { env->error = &Qnil; }
 
+/**
+ * Rounds up the `size' to multiply of word size.
+ */
 static inline usize align_to_word(usize size) { return (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1); }
 
+/**
+ * Ensure that specified `size' can be allocated from the heap.
+ *
+ * Note: This function can run GC.
+ */
 static void ensure_allocatable(risp_env *env, usize size) {
     if ((env->flags & FLAG_ALWAYS_GC) || env->heap_cap - env->heap_len >= size) {
         return;
@@ -196,6 +237,11 @@ static void ensure_allocatable(risp_env *env, usize size) {
     run_gc(env);
 }
 
+/**
+ * Allocate string-like value from the heap.
+ *
+ * Note: This function can run GC.
+ */
 risp_object *alloc_str_like(risp_env *env, risp_type type, usize len) {
     usize str_offset = offsetof(risp_object, str_data);
     usize alloc_size;
@@ -216,6 +262,11 @@ risp_object *alloc_str_like(risp_env *env, risp_type type, usize len) {
     return r;
 }
 
+/**
+ * Allocates fixed-sized (usual) Risp object.
+ *
+ * Note: This function can run GC.
+ */
 risp_object *alloc_object(risp_env *env, risp_type type) {
     usize size = align_to_word(sizeof(risp_object));
     ensure_allocatable(env, size);
@@ -228,8 +279,17 @@ risp_object *alloc_object(risp_env *env, risp_type type) {
     return r;
 }
 
+/**
+ * Set error.
+ */
 void signal_error(risp_env *env, risp_object *err) { env->error = err; }
 
+/**
+ * Set error to `msg' converting to Risp object.
+ * This function is a convenient wrapper for `signal_error'.
+ *
+ * Note: This function can run GC.
+ */
 void signal_error_s(risp_env *env, const char *msg) {
     size_t len = strlen(msg);
     risp_object *err = alloc_str_like(env, T_STRING, len);
@@ -238,6 +298,9 @@ void signal_error_s(risp_env *env, const char *msg) {
     signal_error(env, err);
 }
 
+/**
+ * Push a new variable table to stack.
+ */
 static void push_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     risp_vars *parent_scope;
 
@@ -258,6 +321,9 @@ static void push_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
     env->var_list = vars;
 }
 
+/**
+ * Free all pushed variable table.
+ */
 void var_frame_free_all(risp_env *env) {
     for (risp_vars *vars = env->var_list; vars != NULL;) {
         risp_vars *prev = vars->prev;
@@ -266,6 +332,9 @@ void var_frame_free_all(risp_env *env) {
     }
 }
 
+/**
+ * Initialize a new Risp execution environment.
+ */
 void env_init(risp_env *env) {
     env->heap_len = 0;
     env->heap_cap = 64 * 1024 * 1024;
@@ -283,6 +352,10 @@ void env_init(risp_env *env) {
     push_var_frame(env, 0, 1);
 }
 
+/**
+ * Lookup variable by `symbol' and returnes cons containing the value.
+ * `symbol' must be a interned symbol.
+ */
 static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
     assert(symbol->type == T_SYMBOL);
 
@@ -302,6 +375,10 @@ static risp_object *lookup_variable_cons(risp_env *env, risp_object *symbol) {
     return &Qnil;
 }
 
+/**
+ * Lookup variable by `symbol'
+ * `symbol' must be a interned symbol.
+ */
 risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     risp_object *cons = lookup_variable_cons(env, symbol);
     if (cons == &Qnil) {
@@ -310,6 +387,11 @@ risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
     return cons->cdr;
 }
 
+/**
+ * Bind the `value' to `symbol' in variable table `vars'.
+ *
+ * Note: This function can run GC.
+ */
 static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value) {
     assert(symbol->type == T_SYMBOL);
 
@@ -344,10 +426,20 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, r
     unregister_ephemeral_object(env, esymbol);
 }
 
+/**
+ * Bind the `value' to `symbol' in the most-local variable table.
+ *
+ * Note: This function can run GC.
+ */
 void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value) {
     make_variable(env, env->var_list, symbol, value);
 }
 
+/**
+ * Bind the `value' to `symbol' as a global variable.
+ *
+ * Note: This function can run GC.
+ */
 void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value) {
     risp_vars *vars = env->var_list;
     while (vars->prev) {
@@ -357,6 +449,12 @@ void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value
     make_variable(env, vars, symbol, value);
 }
 
+/**
+ * Bind the `value' to `symbol' in most recently declared place in variable stack.
+ * If no declaration found, it makes global binding.
+ *
+ * Note: This function can run GC.
+ */
 void scoped_set(risp_env *env, risp_object *symbol, risp_object *value) {
     risp_object *cons = lookup_variable_cons(env, symbol);
     if (cons == &Qnil) {
@@ -366,6 +464,11 @@ void scoped_set(risp_env *env, risp_object *symbol, risp_object *value) {
     cons->cdr = value;
 }
 
+/**
+ * Intern or lookup the symbol named by `name'.
+ *
+ * Note: This function can run GC.
+ */
 risp_object *intern_symbol(risp_env *env, const char *name) {
     usize name_len = strlen(name);
 
@@ -399,6 +502,11 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
+/**
+ * Evaluate anything and return the result.
+ *
+ * Note: This function can run GC.
+ */
 risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
     if (exp == &Qnil) {
         return &Qnil;
@@ -453,7 +561,11 @@ risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
 
 static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env);
 
-// read whole expression assuming that LPAREN is already read.
+/**
+ * Read whole expression assuming that LPAREN is already read.
+ *
+ * Note: This function can run GC.
+ */
 static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) {
     risp_eobject *root = register_ephemeral_object(env, alloc_object(env, T_CONS));
 
@@ -569,6 +681,11 @@ lex_err:
     return NULL;
 }
 
+/**
+ * Read anything.
+ *
+ * Note: This function can run GC.
+ */
 static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     token *tk = get_token(lex, err);
     if (tk == NULL) {
@@ -719,6 +836,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
 
 static void repr_object(risp_env *env, risp_object *obj);
 
+/**
+ * Print representation of the list.
+ */
 static void repr_list(risp_env *env, risp_object *obj) {
     if (obj == &Qnil) {
         putchar(')');
@@ -733,6 +853,9 @@ static void repr_list(risp_env *env, risp_object *obj) {
     }
 }
 
+/**
+ * Print representation of the object.
+ */
 static void repr_object(risp_env *env, risp_object *obj) {
     if (obj == &Qnil) {
         fputs("nil", stdout);
@@ -806,6 +929,15 @@ static void repr_object(risp_env *env, risp_object *obj) {
     }
 }
 
+/**
+ * Read any Risp expression and evaluate.
+ * If this is REPL mode, print returned value.
+ *
+ * Positive return value reports success state, and
+ * non-positive value reports that the interpreter wants to exit by the negated value.
+ *
+ * Note: This function can run GC.
+ */
 i32 read_and_eval(lexer *lex, risp_env *env) {
     risp_error err;
     risp_error_init(&err);
@@ -845,6 +977,11 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
     return 1;
 }
 
+/**
+ * Register given native primitives to global variable table.
+ *
+ * Note: This function can run GC.
+ */
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
     risp_object *func_var = alloc_object(env, T_NATIVE_FUNC);
     risp_object *sym = intern_symbol(env, name);
@@ -854,6 +991,11 @@ static inline void register_native_function(risp_env *env, const char *name, ris
     make_global_variable(env, sym, func_var);
 }
 
+/**
+ * Register all native primitives to global variable table.
+ *
+ * Note: This function can run GC.
+ */
 void init_native_functions(risp_env *env) {
     register_native_function(env, "+", RISP_FUNC(plus));
     register_native_function(env, "-", RISP_FUNC(minus));

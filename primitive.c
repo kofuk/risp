@@ -3,6 +3,10 @@
 #include "primitive.h"
 #include "rt.h"
 
+/**
+ * Calculate length of the given `list'.
+ * If the `list' is not a list, error is signaled and -1 is returned.
+ */
 static i64 list_length(risp_env *env, risp_object *list) {
     i64 result = 0;
     for (risp_object *arg = list; arg != &Qnil; arg = arg->cdr) {
