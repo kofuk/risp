@@ -11,20 +11,21 @@
 static i64 list_length(risp_env *env, risp_object *list) {
     i64 result = 0;
     for (risp_object *arg = list; arg != &Qnil; arg = arg->cdr) {
-        ++result;
-
-        risp_object *next = arg->cdr;
-        if (next != &Qnil && next->type != T_CONS) {
+        if (arg->type != T_CONS) {
             signal_error_s(env, "argument must be a list or string");
             return -1;
         }
+
+        ++result;
     }
     return result;
 }
 
 DEFUN(defun) {
     if (list_length(env, args) < 3) {
-        signal_error_s(env, "function name and argument required");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "function name and argument required");
+        }
         return NULL;
     }
 
@@ -67,6 +68,8 @@ DEFUN(defun) {
 DEFUN(divide) {
     if (list_length(env, args) == 0) {
         signal_error_s(env, "1 or more arguments required");
+        return NULL;
+    } else if (get_error(env) != &Qnil) {
         return NULL;
     }
 
@@ -111,7 +114,9 @@ DEFUN(divide) {
 
 DEFUN(eq) {
     if (list_length(env, args) != 2) {
-        signal_error_s(env, "2 arguments expected");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments expected");
+        }
         return NULL;
     }
 
@@ -144,7 +149,9 @@ DEFUN(eq) {
 
 DEFUN(funcall) {
     if (list_length(env, args) < 1) {
-        signal_error_s(env, "function name required");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "function name required");
+        }
         return NULL;
     }
 
@@ -190,7 +197,9 @@ DEFUN(funcall) {
 
 DEFUN(intern) {
     if (list_length(env, args) != 1) {
-        signal_error_s(env, "just 1 argument expected");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "just 1 argument expected");
+        }
         return NULL;
     }
 
@@ -213,7 +222,9 @@ DEFUN(intern) {
 
 DEFUN(length) {
     if (list_length(env, args) != 1) {
-        signal_error_s(env, "just 1 argument expected");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "just 1 argument expected");
+        }
         return NULL;
     }
 
@@ -240,7 +251,9 @@ DEFUN(length) {
 
 DEFUN(make_symbol) {
     if (list_length(env, args) != 1) {
-        signal_error_s(env, "just 1 argument expected");
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "just 1 argument expected");
+        }
         return NULL;
     }
 
@@ -264,6 +277,9 @@ DEFUN(make_symbol) {
 
 DEFUN(minus) {
     i64 len = list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
     if (len == 1) {
         // negate mode
         risp_object *arg = eval_exp(env, args->car);
@@ -328,6 +344,11 @@ DEFUN(minus) {
 }
 
 DEFUN(multiply) {
+    list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
     i64 result = 1;
 
     risp_eobject *cur = register_ephemeral_object(env, args);
@@ -362,6 +383,11 @@ DEFUN(multiply) {
 }
 
 DEFUN(plus) {
+    list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
     risp_eobject *result = register_ephemeral_object(env, alloc_object(env, T_INT));
     result->o->integer = 0;
 
@@ -397,6 +423,11 @@ DEFUN(plus) {
 }
 
 DEFUN(print) {
+    list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
     risp_eobject *cur = register_ephemeral_object(env, args);
 
     while (cur->o != &Qnil) {
@@ -428,12 +459,22 @@ DEFUN(print) {
 }
 
 DEFUN(quote) {
-    UNUSED(env);
-    return args;
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    return args->car;
 }
 
 DEFUN(setq) {
-    if (list_length(env, args) % 2 != 0) {
+    i64 len = list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+    if (len % 2 != 0) {
         signal_error_s(env, "wrong argument count");
         return NULL;
     }

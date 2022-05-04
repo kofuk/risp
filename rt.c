@@ -753,6 +753,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
 
         tk = get_token(lex, err);
         if (tk == NULL) {
+            token_free(tk);
             goto lex_err;
         }
         if (tk->type != TK_RPAREN) {
@@ -766,6 +767,7 @@ static risp_object *read_sexp_inner(lexer *lex, risp_error *err, risp_env *env) 
             return NULL;
         }
 
+        token_free(tk);
         risp_object *result = root->o;
         unregister_ephemeral_object(env, root);
         return result;
@@ -847,7 +849,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         risp_eobject *econs = register_ephemeral_object(env, alloc_object(env, T_CONS));
         risp_eobject *equote = register_ephemeral_object(env, intern_symbol(env, "quote"));
-        risp_object *inner = read_exp(lex, err, env);
+        risp_eobject *inner = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        inner->o->car = read_exp(lex, err, env);
+        inner->o->cdr = &Qnil;
         risp_object *quote = equote->o;
         risp_object *cons = econs->o;
         unregister_ephemeral_object(env, equote);
@@ -856,7 +860,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
             return NULL;
         }
         cons->car = quote;
-        cons->cdr = inner;
+        cons->cdr = inner->o;
+        unregister_ephemeral_object(env, inner);
         return cons;
     }
 
@@ -864,7 +869,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         risp_eobject *econs = register_ephemeral_object(env, alloc_object(env, T_CONS));
         risp_eobject *ebackquote = register_ephemeral_object(env, intern_symbol(env, "backquote"));
-        risp_object *inner = read_exp(lex, err, env);
+        risp_eobject *inner = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        inner->o->car = read_exp(lex, err, env);
+        inner->o->cdr = &Qnil;
         risp_object *backquote = ebackquote->o;
         risp_object *cons = econs->o;
         unregister_ephemeral_object(env, ebackquote);
@@ -873,7 +880,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
             return NULL;
         }
         cons->car = backquote;
-        cons->cdr = inner;
+        cons->cdr = inner->o;
+        unregister_ephemeral_object(env, inner);
         return cons;
     }
 
@@ -881,7 +889,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         risp_eobject *econs = register_ephemeral_object(env, alloc_object(env, T_CONS));
         risp_eobject *eunquote = register_ephemeral_object(env, intern_symbol(env, "unquote"));
-        risp_object *inner = read_exp(lex, err, env);
+        risp_eobject *inner = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        inner->o->car = read_exp(lex, err, env);
+        inner->o->cdr = &Qnil;
         risp_object *unquote = eunquote->o;
         risp_object *cons = econs->o;
         unregister_ephemeral_object(env, eunquote);
@@ -890,7 +900,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
             return NULL;
         }
         cons->car = unquote;
-        cons->cdr = inner;
+        cons->cdr = inner->o;
+        unregister_ephemeral_object(env, inner);
         return cons;
     }
 
@@ -898,7 +909,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         risp_eobject *econs = register_ephemeral_object(env, alloc_object(env, T_CONS));
         risp_eobject *esplice = register_ephemeral_object(env, intern_symbol(env, "splice"));
-        risp_object *inner = read_exp(lex, err, env);
+        risp_eobject *inner = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        inner->o->car = read_exp(lex, err, env);
+        inner->o->cdr = &Qnil;
         risp_object *splice = esplice->o;
         risp_object *cons = econs->o;
         unregister_ephemeral_object(env, esplice);
@@ -907,7 +920,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
             return NULL;
         }
         cons->car = splice;
-        cons->cdr = inner;
+        cons->cdr = inner->o;
+        unregister_ephemeral_object(env, inner);
         return cons;
     }
 
@@ -915,7 +929,9 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
         token_free(tk);
         risp_eobject *econs = register_ephemeral_object(env, alloc_object(env, T_CONS));
         risp_eobject *efunction = register_ephemeral_object(env, intern_symbol(env, "function"));
-        risp_object *inner = read_exp(lex, err, env);
+        risp_eobject *inner = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        inner->o->car = read_exp(lex, err, env);
+        inner->o->cdr = &Qnil;
         risp_object *function = efunction->o;
         risp_object *cons = econs->o;
         unregister_ephemeral_object(env, efunction);
@@ -924,7 +940,8 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
             return NULL;
         }
         cons->car = function;
-        cons->cdr = inner;
+        cons->cdr = inner->o;
+        unregister_ephemeral_object(env, inner);
         return cons;
     }
 
@@ -1012,28 +1029,59 @@ static void repr_object(risp_env *env, risp_object *obj) {
     case T_CONS: {
         risp_eobject *eobj = register_ephemeral_object(env, obj);
         if (eobj->o->car == intern_symbol(env, "quote")) {
-            putchar('\'');
-            obj = eobj->o;
-            unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->cdr);
+            if (obj->cdr->type == T_CONS && obj->cdr->cdr == &Qnil) {
+                putchar('\'');
+                obj = eobj->o;
+                unregister_ephemeral_object(env, eobj);
+                repr_object(env, obj->cdr->car);
+            } else {
+                unregister_ephemeral_object(env, eobj);
+                goto normal_obj;
+            }
         } else if (eobj->o->car == intern_symbol(env, "function")) {
-            putchar('#');
-            putchar('\'');
-            obj = eobj->o;
-            unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->cdr);
+            if (obj->cdr->type == T_CONS && obj->cdr->cdr == &Qnil) {
+                putchar('#');
+                putchar('\'');
+                obj = eobj->o;
+                unregister_ephemeral_object(env, eobj);
+                repr_object(env, obj->cdr->car);
+            } else {
+                unregister_ephemeral_object(env, eobj);
+                goto normal_obj;
+            }
+        } else if (eobj->o->car == intern_symbol(env, "backquote")) {
+            if (obj->cdr->type == T_CONS && obj->cdr->cdr == &Qnil) {
+                putchar('`');
+                obj = eobj->o;
+                unregister_ephemeral_object(env, eobj);
+                repr_object(env, obj->cdr->car);
+            } else {
+                unregister_ephemeral_object(env, eobj);
+                goto normal_obj;
+            }
         } else if (eobj->o->car == intern_symbol(env, "unquote")) {
-            putchar(',');
-            obj = eobj->o;
-            unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->cdr);
+            if (obj->cdr->type == T_CONS && obj->cdr->cdr == &Qnil) {
+                putchar(',');
+                obj = eobj->o;
+                unregister_ephemeral_object(env, eobj);
+                repr_object(env, obj->cdr->car);
+            } else {
+                unregister_ephemeral_object(env, eobj);
+                goto normal_obj;
+            }
         } else if (eobj->o->car == intern_symbol(env, "splice")) {
-            putchar(',');
-            putchar('@');
-            obj = eobj->o;
-            unregister_ephemeral_object(env, eobj);
-            repr_object(env, obj->cdr);
+            if (obj->cdr->type == T_CONS && obj->cdr->cdr == &Qnil) {
+                putchar(',');
+                putchar('@');
+                obj = eobj->o;
+                unregister_ephemeral_object(env, eobj);
+                repr_object(env, obj->cdr->car);
+            } else {
+                unregister_ephemeral_object(env, eobj);
+                goto normal_obj;
+            }
         } else {
+        normal_obj:
             putchar('(');
             repr_object(env, eobj->o->car);
             repr_list(env, obj->cdr);
