@@ -18,7 +18,7 @@ typedef enum {
 typedef struct risp_object risp_object;
 typedef struct risp_env risp_env;
 
-typedef risp_object *(*risp_native_func)(risp_env *env, risp_object *args, u32 caller_level);
+typedef risp_object *(*risp_native_func)(risp_env *env, risp_object *args);
 
 struct risp_object {
     risp_type type;
@@ -77,7 +77,7 @@ void signal_error_s(risp_env *env, const char *msg);
 risp_object *get_error(risp_env *env);
 void clear_error(risp_env *env);
 
-risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level);
+risp_object *eval_exp(risp_env *env, risp_object *exp);
 
 risp_object *alloc_object(risp_env *env, risp_type type);
 risp_object *alloc_str_like(risp_env *env, risp_type type, usize len);

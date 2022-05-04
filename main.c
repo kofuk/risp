@@ -119,6 +119,10 @@ int main(int argc, char **argv) {
     }
 
 clean:
+#ifdef HAVE_READLINE
+    free(lex.rl_line);
+#endif
+
     token_free(lex.tk);
     var_frame_free_all(&env);
     free(env.heap);

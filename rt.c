@@ -310,18 +310,24 @@ static void push_var_frame(risp_env *env, risp_vars *vars) {
  * Prepare a new variable table.
  * Returned value must pass to `push_var_frame'.
  */
-static risp_vars *make_var_frame(risp_env *env, u32 caller_level, u32 callee_level) {
-    risp_vars *parent_scope;
+static risp_vars *make_var_frame_inner(risp_env *env) {
+    risp_vars *vars = malloc(sizeof(risp_vars));
+    vars->vars = &Qnil;
+    vars->parent = env->var_list;
+    vars->prev = env->var_list;
 
-    if (caller_level < callee_level) {
-        parent_scope = env->var_list;
-    } else {
-        u32 diff = caller_level - callee_level;
-        parent_scope = env->var_list;
-        for (u32 i = 0; i <= diff; ++i) {
-            parent_scope = parent_scope->parent;
-        }
-    }
+    return vars;
+}
+
+/**
+ * Create a new variable table which can only global variable.
+ * Returned value must pass to `push_var_frame'.
+ */
+static risp_vars *make_var_frame_isolated(risp_env *env) {
+    assert(env->var_list);
+
+    risp_vars *parent_scope;
+    for (parent_scope = env->var_list; parent_scope->parent; parent_scope = parent_scope->parent) {}
 
     risp_vars *vars = malloc(sizeof(risp_vars));
     vars->vars = &Qnil;
@@ -372,7 +378,7 @@ void env_init(risp_env *env) {
         env->flags |= FLAG_ALWAYS_GC;
     }
 
-    push_var_frame(env, make_var_frame(env, 0, 1));
+    push_var_frame(env, make_var_frame_inner(env));
 }
 
 /**
@@ -525,8 +531,8 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
-static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args, u32 caller_level) {
-    risp_vars *vars = make_var_frame(env, caller_level, 1);
+static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args) {
+    risp_vars *vars = make_var_frame_isolated(env);
 
     usize objs_cap = 1;
     usize objs_len = 0;
@@ -554,7 +560,7 @@ static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp
             arg_objs = realloc(arg_objs, sizeof(risp_eobject *) * objs_cap);
         }
 
-        risp_object *argval = eval_exp(env, arg->o->car, caller_level);
+        risp_object *argval = eval_exp(env, arg->o->car);
         if (get_error(env) != &Qnil) {
             goto failure;
         }
@@ -604,10 +610,10 @@ failure:
     return false;
 }
 
-static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args, u32 caller_level) {
+static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args) {
     risp_eobject *efunc = register_ephemeral_object(env, func);
     risp_eobject *eargs = register_ephemeral_object(env, args);
-    if (!prepare_function_var_stack(env, func->func.arglist, args, caller_level)) {
+    if (!prepare_function_var_stack(env, func->func.arglist, args)) {
         unregister_ephemeral_object(env, eargs);
         unregister_ephemeral_object(env, efunc);
 
@@ -622,7 +628,7 @@ static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_ob
     risp_object *result = &Qnil;
 
     while (body->o != &Qnil) {
-        result = eval_exp(env, body->o->car, 0);
+        result = eval_exp(env, body->o->car);
         if (get_error(env) != &Qnil) {
             pop_var_frame(env);
 
@@ -647,7 +653,7 @@ static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_ob
  *
  * Note: This function can run GC.
  */
-risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
+risp_object *eval_exp(risp_env *env, risp_object *exp) {
     if (exp == &Qnil) {
         return &Qnil;
     } else if (exp == &Qt) {
@@ -668,9 +674,9 @@ risp_object *eval_exp(risp_env *env, risp_object *exp, u32 caller_level) {
         }
 
         if (func->type == T_NATIVE_FUNC) {
-            return func->native_func(env, exp->cdr, caller_level);
+            return func->native_func(env, exp->cdr);
         } else if (func->type == T_FUNC) {
-            return call_risp_function(env, func, exp->cdr, caller_level);
+            return call_risp_function(env, func, exp->cdr);
         } else {
             signal_error_s(env, "void function");
         }
@@ -1097,7 +1103,7 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
         return 0;
     }
 
-    risp_object *result = eval_exp(env, sexp, 0);
+    risp_object *result = eval_exp(env, sexp);
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != &Qnil) {
