@@ -212,6 +212,54 @@ DEFUN(funcall) {
     }
 }
 
+DEFUN(if) {
+    if (list_length(env, args) < 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *cond = args->car;
+    risp_eobject *then = register_ephemeral_object(env, args->cdr->car);
+    risp_eobject *rest = register_ephemeral_object(env, args->cdr->cdr);
+
+    risp_object *cond_val = eval_exp(env, cond);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (cond_val != &Qnil) {
+        unregister_ephemeral_object(env, rest);
+
+        risp_object *exp = then->o;
+        unregister_ephemeral_object(env, then);
+        risp_object *r = eval_exp(env, exp);
+        if (get_error(env) != &Qnil) {
+            return NULL;
+        }
+        return r;
+    }
+
+    unregister_ephemeral_object(env, then);
+
+    risp_object *result = &Qnil;
+    while (rest->o != &Qnil) {
+        result = eval_exp(env, rest->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, rest);
+            return NULL;
+        }
+
+        risp_object *next = rest->o->cdr;
+        unregister_ephemeral_object(env, rest);
+        rest = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, rest);
+    return result;
+}
+
 DEFUN(intern) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == &Qnil) {
@@ -300,6 +348,57 @@ DEFUN(length) {
     r->integer = result;
 
     return r;
+}
+
+DEFUN(lt) {
+    if (list_length(env, args) < 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 or more argument required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *rest = register_ephemeral_object(env, args->cdr);
+
+    risp_object *first = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, rest);
+        return NULL;
+    }
+    if (first->type != T_INT) {
+        unregister_ephemeral_object(env, rest);
+        signal_error_s(env, "arguments must be integer");
+        return NULL;
+    }
+
+    i64 last = first->integer;
+    bool ok = true;
+    while (rest->o != &Qnil) {
+        risp_object *val = eval_exp(env, rest->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, rest);
+            return NULL;
+        }
+        if (val->type != T_INT) {
+            unregister_ephemeral_object(env, rest);
+            signal_error_s(env, "arguments must be integer");
+            return NULL;
+        }
+
+        if (!(last < val->integer)) {
+            ok = false;
+            break;
+        }
+        last = val->integer;
+
+        risp_object *next = rest->o->cdr;
+        unregister_ephemeral_object(env, rest);
+        rest = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, rest);
+
+    return ok ? &Qt : &Qnil;
 }
 
 DEFUN(make_symbol) {

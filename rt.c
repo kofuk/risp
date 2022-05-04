@@ -1316,10 +1316,12 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "-", RISP_FUNC(minus));
     register_native_function(env, "*", RISP_FUNC(multiply));
     register_native_function(env, "/", RISP_FUNC(divide));
+    register_native_function(env, "<", RISP_FUNC(lt));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
+    register_native_function(env, "if", RISP_FUNC(if));
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
