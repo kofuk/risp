@@ -220,6 +220,42 @@ DEFUN(intern) {
     return intern_symbol(env, name);
 }
 
+DEFUN(lambda) {
+    if (list_length(env, args) < 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "arglist requied");
+        }
+        return NULL;
+    }
+
+    risp_eobject *eclosure = register_ephemeral_object(env, intern_symbol(env, "closure"));
+    risp_eobject *eargs = register_ephemeral_object(env, args->car);
+    risp_eobject *ebody = register_ephemeral_object(env, args->cdr);
+    risp_eobject *eenv = register_ephemeral_object(env, collect_lexical_variables(env));
+
+    risp_eobject *result = register_ephemeral_object(env, alloc_object(env, T_CONS));
+    result->o->car = eclosure->o;
+    unregister_ephemeral_object(env, eclosure);
+    risp_eobject *env_cons = register_ephemeral_object(env, alloc_object(env, T_CONS));
+    result->o->cdr = env_cons->o;
+    env_cons->o->car = eenv->o;
+    risp_object *arg_cons = alloc_object(env, T_CONS);
+    env_cons->o->cdr = arg_cons;
+    arg_cons->car = eargs->o;
+    arg_cons->cdr = ebody->o;
+
+    risp_object *r = result->o;
+
+    unregister_ephemeral_object(env, env_cons);
+    unregister_ephemeral_object(env, result);
+    unregister_ephemeral_object(env, eenv);
+    unregister_ephemeral_object(env, ebody);
+    unregister_ephemeral_object(env, eargs);
+    unregister_ephemeral_object(env, eclosure);
+
+    return r;
+}
+
 DEFUN(length) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == &Qnil) {

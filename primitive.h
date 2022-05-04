@@ -11,6 +11,7 @@ DEFUN(divide);
 DEFUN(eq);
 DEFUN(funcall);
 DEFUN(intern);
+DEFUN(lambda);
 DEFUN(length);
 DEFUN(make_symbol);
 DEFUN(minus);

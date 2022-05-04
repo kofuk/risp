@@ -87,6 +87,7 @@ void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value)
 void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value);
 void scoped_set(risp_env *env, risp_object *symbol, risp_object *value);
 risp_object *lookup_symbol(risp_env *env, risp_object *symbol);
+risp_object *collect_lexical_variables(risp_env *env);
 
 risp_object *intern_symbol(risp_env *env, const char *name);
 

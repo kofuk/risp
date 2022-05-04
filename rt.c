@@ -51,7 +51,7 @@ static void run_gc(risp_env *env) {
     risp_object *free_ptr = new_heap;
 
     for (risp_eobject *eo = env->ephemeral; eo; eo = eo->next) {
-        if (eo->o == NULL || eo->o == &Qnil) {
+        if (eo->o == NULL || eo->o == &Qnil || eo->o == &Qt) {
             continue;
         }
 
@@ -78,7 +78,7 @@ static void run_gc(risp_env *env) {
         }
     }
 
-    if (env->error != &Qnil) {
+    if (env->error != &Qnil && env->error != &Qt) {
         if (env->error->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->error);
             env->error = free_ptr;
@@ -88,7 +88,7 @@ static void run_gc(risp_env *env) {
         }
     }
 
-    if (env->obarray != &Qnil) {
+    if (env->obarray != &Qnil && env->obarray != &Qt) {
         if (env->obarray->forwarding == NULL) {
             new_len += copy_object(free_ptr, env->obarray);
             env->obarray = free_ptr;
@@ -102,7 +102,7 @@ static void run_gc(risp_env *env) {
     while (scan_ptr < free_ptr) {
         switch (scan_ptr->type) {
         case T_CONS:
-            if (scan_ptr->car != &Qnil) {
+            if (scan_ptr->car != &Qnil && scan_ptr->car != &Qt) {
                 if (scan_ptr->car->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->car);
                     scan_ptr->car = free_ptr;
@@ -111,7 +111,7 @@ static void run_gc(risp_env *env) {
                     scan_ptr->car = scan_ptr->car->forwarding;
                 }
             }
-            if (scan_ptr->cdr != &Qnil) {
+            if (scan_ptr->cdr != &Qnil && scan_ptr->cdr != &Qt) {
                 if (scan_ptr->cdr->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->cdr);
                     scan_ptr->cdr = free_ptr;
@@ -123,7 +123,7 @@ static void run_gc(risp_env *env) {
             break;
 
         case T_FUNC:
-            if (scan_ptr->func.arglist != &Qnil) {
+            if (scan_ptr->func.arglist != &Qnil && scan_ptr->func.arglist != &Qt) {
                 if (scan_ptr->func.arglist->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->func.arglist);
                     scan_ptr->func.arglist = free_ptr;
@@ -132,7 +132,7 @@ static void run_gc(risp_env *env) {
                     scan_ptr->func.arglist = scan_ptr->func.arglist->forwarding;
                 }
             }
-            if (scan_ptr->func.body != &Qnil) {
+            if (scan_ptr->func.body != &Qnil && scan_ptr->func.body != &Qt) {
                 if (scan_ptr->func.body->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->func.body);
                     scan_ptr->func.body = free_ptr;
@@ -411,6 +411,33 @@ risp_object *lookup_symbol(risp_env *env, risp_object *symbol) {
         return NULL;
     }
     return cons->cdr;
+}
+
+/**
+ * Collect all visible lexical binding and return them as alist.
+ *
+ * Note: This function can run GC.
+ */
+risp_object *collect_lexical_variables(risp_env *env) {
+    risp_eobject *prev = register_ephemeral_object(env, alloc_object(env, T_CONS));
+    prev->o->car = &Qt;
+    prev->o->cdr = &Qnil;
+
+    for (risp_vars *vars = env->var_list; vars != NULL && vars->parent != NULL; vars = vars->parent) {
+        for (risp_object *var = vars->vars; var != &Qnil; var = var->cdr) {
+            assert(var->type == T_CONS);
+
+            risp_object *cons = alloc_object(env, T_CONS);
+            cons->car = var->car;
+            cons->cdr = prev->o;
+            unregister_ephemeral_object(env, prev);
+            prev = register_ephemeral_object(env, cons);
+        }
+    }
+
+    risp_object *r = prev->o;
+    unregister_ephemeral_object(env, prev);
+    return r;
 }
 
 /**
@@ -1035,7 +1062,6 @@ static void repr_object(risp_env *env, risp_object *obj) {
                 unregister_ephemeral_object(env, eobj);
                 repr_object(env, obj->cdr->car);
             } else {
-                unregister_ephemeral_object(env, eobj);
                 goto normal_obj;
             }
         } else if (eobj->o->car == intern_symbol(env, "function")) {
@@ -1046,7 +1072,6 @@ static void repr_object(risp_env *env, risp_object *obj) {
                 unregister_ephemeral_object(env, eobj);
                 repr_object(env, obj->cdr->car);
             } else {
-                unregister_ephemeral_object(env, eobj);
                 goto normal_obj;
             }
         } else if (eobj->o->car == intern_symbol(env, "backquote")) {
@@ -1056,7 +1081,6 @@ static void repr_object(risp_env *env, risp_object *obj) {
                 unregister_ephemeral_object(env, eobj);
                 repr_object(env, obj->cdr->car);
             } else {
-                unregister_ephemeral_object(env, eobj);
                 goto normal_obj;
             }
         } else if (eobj->o->car == intern_symbol(env, "unquote")) {
@@ -1066,7 +1090,6 @@ static void repr_object(risp_env *env, risp_object *obj) {
                 unregister_ephemeral_object(env, eobj);
                 repr_object(env, obj->cdr->car);
             } else {
-                unregister_ephemeral_object(env, eobj);
                 goto normal_obj;
             }
         } else if (eobj->o->car == intern_symbol(env, "splice")) {
@@ -1077,13 +1100,14 @@ static void repr_object(risp_env *env, risp_object *obj) {
                 unregister_ephemeral_object(env, eobj);
                 repr_object(env, obj->cdr->car);
             } else {
-                unregister_ephemeral_object(env, eobj);
                 goto normal_obj;
             }
         } else {
         normal_obj:
             putchar('(');
-            repr_object(env, eobj->o->car);
+            risp_object *inner = eobj->o;
+            unregister_ephemeral_object(env, eobj);
+            repr_object(env, inner->car);
             repr_list(env, obj->cdr);
         }
         break;
@@ -1197,6 +1221,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
     register_native_function(env, "intern", RISP_FUNC(intern));
+    register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
     register_native_function(env, "print", RISP_FUNC(print));
