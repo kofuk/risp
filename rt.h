@@ -78,6 +78,7 @@ risp_object *get_error(risp_env *env);
 void clear_error(risp_env *env);
 
 risp_object *eval_exp(risp_env *env, risp_object *exp);
+risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args);
 
 risp_object *alloc_object(risp_env *env, risp_type type);
 risp_object *alloc_str_like(risp_env *env, risp_type type, usize len);

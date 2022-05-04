@@ -1,4 +1,5 @@
 #include <string.h>
+#include <sys/types.h>
 
 #include "primitive.h"
 #include "rt.h"
@@ -47,7 +48,7 @@ DEFUN(defun) {
     risp_eobject *ea = register_ephemeral_object(env, func_arg);
     risp_eobject *eb = register_ephemeral_object(env, func_body);
 
-    risp_object *func =  alloc_object(env, T_FUNC);
+    risp_object *func = alloc_object(env, T_FUNC);
     func->func.arglist = ea->o;
     func->func.body = eb->o;
     func->func.level = 1;
@@ -139,6 +140,52 @@ DEFUN(eq) {
     }
 
     return o1 == o2 ? &Qt : &Qnil;
+}
+
+DEFUN(funcall) {
+    if (list_length(env, args) < 1) {
+        signal_error_s(env, "function name required");
+        return NULL;
+    }
+
+    risp_eobject *rest = register_ephemeral_object(env, args->cdr);
+    risp_object *func = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    switch (func->type) {
+    case T_SYMBOL: {
+        risp_object *actual_func = lookup_symbol(env, func);
+        if (actual_func == NULL) {
+            unregister_ephemeral_object(env, rest);
+            signal_error_s(env, "void variable");
+            return NULL;
+        }
+
+        switch (actual_func->type) {
+        case T_FUNC: {
+            risp_object *args = rest->o;
+            unregister_ephemeral_object(env, rest);
+            return call_risp_function(env, actual_func, args);
+        }
+        case T_NATIVE_FUNC: {
+            risp_object *args = rest->o;
+            unregister_ephemeral_object(env, rest);
+            return actual_func->native_func(env, args);
+        }
+        default:
+            unregister_ephemeral_object(env, rest);
+            signal_error_s(env, "object cannot be called");
+            return NULL;
+        }
+    }
+
+    default:
+        unregister_ephemeral_object(env, rest);
+        signal_error_s(env, "object cannot be called");
+        return NULL;
+    }
 }
 
 DEFUN(intern) {

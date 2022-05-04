@@ -9,6 +9,7 @@
 DEFUN(defun);
 DEFUN(divide);
 DEFUN(eq);
+DEFUN(funcall);
 DEFUN(intern);
 DEFUN(length);
 DEFUN(make_symbol);

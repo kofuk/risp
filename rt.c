@@ -302,9 +302,7 @@ void signal_error_s(risp_env *env, const char *msg) {
 /**
  * Push a new variable table to stack.
  */
-static void push_var_frame(risp_env *env, risp_vars *vars) {
-    env->var_list = vars;
-}
+static void push_var_frame(risp_env *env, risp_vars *vars) { env->var_list = vars; }
 
 /**
  * Prepare a new variable table.
@@ -327,7 +325,8 @@ static risp_vars *make_var_frame_isolated(risp_env *env) {
     assert(env->var_list);
 
     risp_vars *parent_scope;
-    for (parent_scope = env->var_list; parent_scope->parent; parent_scope = parent_scope->parent) {}
+    for (parent_scope = env->var_list; parent_scope->parent; parent_scope = parent_scope->parent) {
+    }
 
     risp_vars *vars = malloc(sizeof(risp_vars));
     vars->vars = &Qnil;
@@ -340,9 +339,7 @@ static risp_vars *make_var_frame_isolated(risp_env *env) {
 /**
  * Free variable frame along with its contents.
  */
-static void var_frame_free(risp_vars *vars) {
-    free(vars);
-}
+static void var_frame_free(risp_vars *vars) { free(vars); }
 
 static void pop_var_frame(risp_env *env) {
     risp_vars *prev = env->var_list->prev;
@@ -610,7 +607,7 @@ failure:
     return false;
 }
 
-static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args) {
+risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args) {
     risp_eobject *efunc = register_ephemeral_object(env, func);
     risp_eobject *eargs = register_ephemeral_object(env, args);
     if (!prepare_function_var_stack(env, func->func.arglist, args)) {
@@ -638,7 +635,7 @@ static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_ob
 
         risp_object *next = body->o->cdr;
         unregister_ephemeral_object(env, body);
-        body  = register_ephemeral_object(env, next);
+        body = register_ephemeral_object(env, next);
     }
 
     unregister_ephemeral_object(env, body);
@@ -1149,6 +1146,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "/", RISP_FUNC(divide));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "eq", RISP_FUNC(eq));
+    register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "length", RISP_FUNC(length));
