@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "parse.h"
 #include "primitive.h"
@@ -330,9 +331,16 @@ static risp_vars *make_var_frame(risp_env *env, u32 caller_level, u32 callee_lev
     return vars;
 }
 
+/**
+ * Free variable frame along with its contents.
+ */
+static void var_frame_free(risp_vars *vars) {
+    free(vars);
+}
+
 static void pop_var_frame(risp_env *env) {
     risp_vars *prev = env->var_list->prev;
-    free(env->var_list);
+    var_frame_free(env->var_list);
     env->var_list = prev;
 }
 
@@ -342,7 +350,7 @@ static void pop_var_frame(risp_env *env) {
 void var_frame_free_all(risp_env *env) {
     for (risp_vars *vars = env->var_list; vars != NULL;) {
         risp_vars *prev = vars->prev;
-        free(vars);
+        var_frame_free(vars);
         vars = prev;
     }
 }
@@ -519,8 +527,81 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
 
 static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args, u32 caller_level) {
     risp_vars *vars = make_var_frame(env, caller_level, 1);
+
+    usize objs_cap = 1;
+    usize objs_len = 0;
+    risp_eobject **arg_objs = malloc(sizeof(risp_eobject *) * objs_cap);
+
+    risp_eobject *arg_sym = register_ephemeral_object(env, arglist);
+    risp_eobject *arg = register_ephemeral_object(env, args);
+
+    risp_eobject *cur_arg_sym = register_ephemeral_object(env, arg_sym->o);
+
+    for (;;) {
+        if ((cur_arg_sym->o == &Qnil || arg->o == &Qnil)) {
+            if (cur_arg_sym->o == arg->o) {
+                // All arguments processed.
+                break;
+            } else {
+                // Wrong argument count.
+                signal_error_s(env, "Wrong argument count");
+                goto failure;
+            }
+        }
+
+        if (objs_len >= objs_cap) {
+            objs_cap <<= 1;
+            arg_objs = realloc(arg_objs, sizeof(risp_eobject *) * objs_cap);
+        }
+
+        risp_object *argval = eval_exp(env, arg->o->car, caller_level);
+        if (get_error(env) != &Qnil) {
+            goto failure;
+        }
+        risp_eobject *ea = register_ephemeral_object(env, argval);
+        arg_objs[objs_len] = ea;
+        ++objs_len;
+
+        risp_object *next_arg = arg->o->cdr;
+        risp_object *next_arg_sym = cur_arg_sym->o->cdr;
+
+        unregister_ephemeral_object(env, arg);
+        unregister_ephemeral_object(env, cur_arg_sym);
+
+        arg = register_ephemeral_object(env, next_arg);
+        cur_arg_sym = register_ephemeral_object(env, next_arg_sym);
+    }
+
+    unregister_ephemeral_object(env, cur_arg_sym);
+    unregister_ephemeral_object(env, arg);
+
+    cur_arg_sym = arg_sym;
+    for (usize i = 0; i < objs_len; ++i) {
+        make_variable(env, vars, cur_arg_sym->o->car, arg_objs[i]->o);
+        unregister_ephemeral_object(env, arg_objs[i]);
+
+        risp_object *next_arg_sym = arg_sym->o->cdr;
+        unregister_ephemeral_object(env, cur_arg_sym);
+        cur_arg_sym = register_ephemeral_object(env, next_arg_sym);
+    }
+    free(arg_objs);
+
+    unregister_ephemeral_object(env, cur_arg_sym);
+
     push_var_frame(env, vars);
+
     return true;
+
+failure:
+    unregister_ephemeral_object(env, cur_arg_sym);
+    unregister_ephemeral_object(env, arg);
+    unregister_ephemeral_object(env, arg_sym);
+    for (usize i = 0; i < objs_len; ++i) {
+        unregister_ephemeral_object(env, arg_objs[i]);
+    }
+    free(arg_objs);
+    var_frame_free(vars);
+    return false;
 }
 
 static risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args, u32 caller_level) {

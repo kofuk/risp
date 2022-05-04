@@ -39,7 +39,7 @@ DEFUN(defun) {
     }
 
     for (risp_object *a = func_arg; a != &Qnil; a = a->cdr) {
-        if (a->type != T_SYMBOL) {
+        if (a->car->type != T_SYMBOL) {
             signal_error_s(env, "argument must be a symbol");
             return NULL;
         }
