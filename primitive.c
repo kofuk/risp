@@ -188,6 +188,23 @@ DEFUN(funcall) {
         }
     }
 
+    case T_CONS: {
+        risp_eobject *efunc = register_ephemeral_object(env, func);
+        risp_object *closure = intern_symbol(env, "closure");
+        if (efunc->o->car != closure) {
+            unregister_ephemeral_object(env, efunc);
+            unregister_ephemeral_object(env, rest);
+            signal_error_s(env, "object cannot be called");
+            return NULL;
+        }
+
+        func = efunc->o;
+        risp_object *args = rest->o;
+        unregister_ephemeral_object(env, efunc);
+        unregister_ephemeral_object(env, rest);
+        return call_risp_closure(env, func, args);
+    }
+
     default:
         unregister_ephemeral_object(env, rest);
         signal_error_s(env, "object cannot be called");

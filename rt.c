@@ -445,7 +445,7 @@ risp_object *collect_lexical_variables(risp_env *env) {
  *
  * Note: This function can run GC.
  */
-static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value) {
+static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, risp_object *value, bool ignore_if_set) {
     assert(symbol->type == T_SYMBOL);
 
     for (risp_object *var = vars->vars; var != &Qnil; var = var->cdr) {
@@ -456,7 +456,9 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, r
         assert(var_cons->car->type == T_SYMBOL);
 
         if (symbol == var_cons->car) {
-            var_cons->cdr = value;
+            if (!ignore_if_set) {
+                var_cons->cdr = value;
+            }
             return;
         }
     }
@@ -484,8 +486,8 @@ static void make_variable(risp_env *env, risp_vars *vars, risp_object *symbol, r
  *
  * Note: This function can run GC.
  */
-void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value) {
-    make_variable(env, env->var_list, symbol, value);
+void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value, bool ignore_if_set) {
+    make_variable(env, env->var_list, symbol, value, ignore_if_set);
 }
 
 /**
@@ -499,7 +501,7 @@ void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value
         vars = vars->prev;
     }
 
-    make_variable(env, vars, symbol, value);
+    make_variable(env, vars, symbol, value, false);
 }
 
 /**
@@ -555,8 +557,13 @@ risp_object *intern_symbol(risp_env *env, const char *name) {
     return sym;
 }
 
-static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args) {
-    risp_vars *vars = make_var_frame_isolated(env);
+static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp_object *args, bool isolated) {
+    risp_vars *vars;
+    if (isolated) {
+        vars = make_var_frame_isolated(env);
+    } else {
+        vars = make_var_frame_inner(env);
+    }
 
     usize objs_cap = 1;
     usize objs_len = 0;
@@ -607,7 +614,7 @@ static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp
 
     cur_arg_sym = arg_sym;
     for (usize i = 0; i < objs_len; ++i) {
-        make_variable(env, vars, cur_arg_sym->o->car, arg_objs[i]->o);
+        make_variable(env, vars, cur_arg_sym->o->car, arg_objs[i]->o, false);
         unregister_ephemeral_object(env, arg_objs[i]);
 
         risp_object *next_arg_sym = arg_sym->o->cdr;
@@ -637,7 +644,7 @@ failure:
 risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args) {
     risp_eobject *efunc = register_ephemeral_object(env, func);
     risp_eobject *eargs = register_ephemeral_object(env, args);
-    if (!prepare_function_var_stack(env, func->func.arglist, args)) {
+    if (!prepare_function_var_stack(env, func->func.arglist, args, true)) {
         unregister_ephemeral_object(env, eargs);
         unregister_ephemeral_object(env, efunc);
 
@@ -647,6 +654,99 @@ risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *a
     unregister_ephemeral_object(env, eargs);
 
     risp_eobject *body = register_ephemeral_object(env, efunc->o->func.body);
+    unregister_ephemeral_object(env, efunc);
+
+    risp_object *result = &Qnil;
+
+    while (body->o != &Qnil) {
+        result = eval_exp(env, body->o->car);
+        if (get_error(env) != &Qnil) {
+            pop_var_frame(env);
+
+            unregister_ephemeral_object(env, body);
+            return NULL;
+        }
+
+        risp_object *next = body->o->cdr;
+        unregister_ephemeral_object(env, body);
+        body = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, body);
+
+    pop_var_frame(env);
+
+    return result;
+}
+
+/**
+ * Execute closure and return the result.
+ *
+ * Note: This function can run GC.
+ */
+risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *args) {
+    if (func->type != T_CONS) {
+        signal_error_s(env, "illegal closure");
+        return NULL;
+    }
+    if (func->cdr == &Qnil || func->cdr->type != T_CONS) {
+        signal_error_s(env, "illegal closure (no environment supplied)");
+        return NULL;
+    }
+    if (func->cdr->cdr == &Qnil || func->cdr->cdr->type != T_CONS) {
+        signal_error_s(env, "illegal closure (no arglist supplied)");
+        return NULL;
+    }
+
+    risp_eobject *efunc = register_ephemeral_object(env, func);
+
+    if (!prepare_function_var_stack(env, func->cdr->cdr->car, args, false)) {
+        unregister_ephemeral_object(env, efunc);
+
+        return NULL;
+    }
+
+    risp_eobject *lex_var = register_ephemeral_object(env, efunc->o->cdr->car);
+    for (;;) {
+        if (lex_var->o->type != T_CONS) {
+            unregister_ephemeral_object(env, lex_var);
+            unregister_ephemeral_object(env, efunc);
+            pop_var_frame(env);
+            signal_error_s(env, "Illegal lexical vars");
+            return NULL;
+        }
+
+        risp_object *var = lex_var->o->car;
+        if (var == &Qt) {
+            break;
+        }
+
+        if (var == &Qnil || var->type != T_CONS) {
+            unregister_ephemeral_object(env, lex_var);
+            unregister_ephemeral_object(env, efunc);
+            pop_var_frame(env);
+            signal_error_s(env, "Illegal lexical vars (nil var found)");
+            return NULL;
+        }
+
+        if (var->car->type != T_SYMBOL) {
+            unregister_ephemeral_object(env, lex_var);
+            unregister_ephemeral_object(env, efunc);
+            pop_var_frame(env);
+            signal_error_s(env, "Illegal lexical vars (symbol name is not symbol type)");
+            return NULL;
+        }
+
+        make_local_variable(env, var->car, var->cdr, true);
+
+        risp_object *next = lex_var->o->cdr;
+        unregister_ephemeral_object(env, lex_var);
+        lex_var = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, lex_var);
+
+    risp_eobject *body = register_ephemeral_object(env, efunc->o->cdr->cdr->cdr);
     unregister_ephemeral_object(env, efunc);
 
     risp_object *result = &Qnil;

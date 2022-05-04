@@ -79,11 +79,12 @@ void clear_error(risp_env *env);
 
 risp_object *eval_exp(risp_env *env, risp_object *exp);
 risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args);
+risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *args);
 
 risp_object *alloc_object(risp_env *env, risp_type type);
 risp_object *alloc_str_like(risp_env *env, risp_type type, usize len);
 
-void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value);
+void make_local_variable(risp_env *env, risp_object *symbol, risp_object *value, bool ignore_if_set);
 void make_global_variable(risp_env *env, risp_object *symbol, risp_object *value);
 void scoped_set(risp_env *env, risp_object *symbol, risp_object *value);
 risp_object *lookup_symbol(risp_env *env, risp_object *symbol);
