@@ -773,6 +773,54 @@ risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *ar
 }
 
 /**
+ * Runs body with a element of `list' stored in local variable `var'.
+ *
+ * Note: This function can run GC.
+ */
+void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_object *body) {
+    if (var->type != T_SYMBOL) {
+        signal_error_s(env, "`var' must be a symbol");
+        return;
+    }
+
+    push_var_frame(env, make_var_frame_inner(env));
+
+    risp_eobject *elist = register_ephemeral_object(env, list);
+    risp_eobject *ebody = register_ephemeral_object(env, body);
+
+    while (elist->o != &Qnil) {
+        make_local_variable(env, var, elist->o->car, false);
+
+        risp_eobject *body_cur = register_ephemeral_object(env, ebody->o);
+        while (body_cur->o != &Qnil) {
+            eval_exp(env, body_cur->o->car);
+            if (get_error(env) != &Qnil) {
+                unregister_ephemeral_object(env, body_cur);
+                unregister_ephemeral_object(env, ebody);
+                unregister_ephemeral_object(env, elist);
+                pop_var_frame(env);
+                return;
+            }
+
+            risp_object *next = body_cur->o->cdr;
+            unregister_ephemeral_object(env, body_cur);
+            body_cur = register_ephemeral_object(env, next);
+        }
+
+        unregister_ephemeral_object(env, body_cur);
+
+        risp_object *next = elist->o->cdr;
+        unregister_ephemeral_object(env, elist);
+        elist = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, ebody);
+    unregister_ephemeral_object(env, elist);
+
+    pop_var_frame(env);
+}
+
+/**
  * Evaluate anything and return the result.
  *
  * Note: This function can run GC.
@@ -1318,6 +1366,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "/", RISP_FUNC(divide));
     register_native_function(env, "<", RISP_FUNC(lt));
     register_native_function(env, "defun", RISP_FUNC(defun));
+    register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
@@ -1327,6 +1376,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "length", RISP_FUNC(length));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
     register_native_function(env, "print", RISP_FUNC(print));
+    register_native_function(env, "progn", RISP_FUNC(progn));
     register_native_function(env, "quote", RISP_FUNC(quote));
     register_native_function(env, "setq", RISP_FUNC(setq));
 }

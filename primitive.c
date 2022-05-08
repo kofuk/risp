@@ -112,6 +112,65 @@ DEFUN(divide) {
     return r;
 }
 
+DEFUN(dolist) {
+    if (list_length(env, args) < 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *arg = args->car;
+    if (list_length(env, arg) < 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "illegal argument");
+        }
+        return NULL;
+    }
+
+    risp_object *var = arg->car;
+    if (var->type != T_SYMBOL) {
+        signal_error_s(env, "argument var must be a symbol");
+        return NULL;
+    }
+    risp_eobject *evar = register_ephemeral_object(env, var);
+    risp_eobject *ebody = register_ephemeral_object(env, args->cdr);
+
+    risp_object *list = eval_exp(env, arg->cdr->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, ebody);
+        unregister_ephemeral_object(env, evar);
+        return NULL;
+    }
+
+    risp_eobject *result = register_ephemeral_object(env, arg->cdr->cdr);
+
+    risp_object *body = ebody->o;
+    unregister_ephemeral_object(env, ebody);
+
+    var = evar->o;
+    unregister_ephemeral_object(env, evar);
+
+    run_dolist_body(env, var, list, body);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, result);
+        return NULL;
+    }
+
+    risp_object *r = &Qnil;
+    if (result->o != &Qnil) {
+        r = eval_exp(env, result->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, result);
+            return NULL;
+        }
+    }
+
+    unregister_ephemeral_object(env, result);
+
+    return r;
+}
+
 DEFUN(eq) {
     if (list_length(env, args) != 2) {
         if (get_error(env) == &Qnil) {
@@ -608,6 +667,30 @@ DEFUN(print) {
     unregister_ephemeral_object(env, cur);
 
     return &Qnil;
+}
+
+DEFUN(progn) {
+    list_length(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    risp_object *result = &Qnil;
+    risp_eobject *body = register_ephemeral_object(env, args);
+    while (body->o != &Qnil) {
+        result = eval_exp(env, body->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, body);
+            return NULL;
+        }
+
+        risp_object *next = body->o->cdr;
+        unregister_ephemeral_object(env, body);
+        body = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, body);
+    return result;
 }
 
 DEFUN(quote) {

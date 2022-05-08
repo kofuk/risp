@@ -8,6 +8,7 @@
 
 DEFUN(defun);
 DEFUN(divide);
+DEFUN(dolist);
 DEFUN(eq);
 DEFUN(funcall);
 DEFUN(if);
@@ -20,6 +21,7 @@ DEFUN(minus);
 DEFUN(multiply);
 DEFUN(plus);
 DEFUN(print);
+DEFUN(progn);
 DEFUN(quote);
 DEFUN(setq);
 
