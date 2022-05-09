@@ -26,6 +26,7 @@ DEFUN(multiply);
 DEFUN(not );
 DEFUN(nth);
 DEFUN(nthcdr);
+DEFUN(nthchar);
 DEFUN(plus);
 DEFUN(print);
 DEFUN(progn);

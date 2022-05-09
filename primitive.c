@@ -870,6 +870,55 @@ DEFUN(nthcdr) {
     return cur;
 }
 
+DEFUN(nthchar) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *str_exp = register_ephemeral_object(env, args->cdr->car);
+
+    risp_object *index = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, str_exp);
+        return NULL;
+    }
+    if (index->type != T_INT) {
+        unregister_ephemeral_object(env, str_exp);
+        signal_error_s(env, "index must be int");
+        return NULL;
+    }
+
+    i64 n = index->integer;
+
+    risp_object *str_arg = str_exp->o;
+    unregister_ephemeral_object(env, str_exp);
+    risp_object *str = eval_exp(env, str_arg);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+    if (str->type != T_STRING) {
+        signal_error_s(env, "argument must be string");
+        return NULL;
+    }
+    if (n < 0) {
+        signal_error_s(env, "Negative index is not permitted");
+        return NULL;
+    }
+
+    if ((u64)n >= str->str_len) {
+        signal_error_s(env, "Index out of range");
+        return NULL;
+    }
+
+    u8 chr = str->str_data[n];
+    risp_object *r = alloc_object(env, T_INT);
+    r->integer = chr;
+    return r;
+}
+
 DEFUN(plus) {
     list_length(env, args);
     if (get_error(env) != &Qnil) {

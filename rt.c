@@ -1487,6 +1487,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
     register_native_function(env, "nth", RISP_FUNC(nth));
     register_native_function(env, "nthcdr", RISP_FUNC(nthcdr));
+    register_native_function(env, "nthchar", RISP_FUNC(nthchar));
     register_native_function(env, "not", RISP_FUNC(not ));
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "progn", RISP_FUNC(progn));
