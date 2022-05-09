@@ -86,6 +86,9 @@ int main(int argc, char **argv) {
 #ifdef HAVE_READLINE
         }
 #endif
+
+        argc = 1;
+        argv[0] = "<stdin>";
     } else {
         FILE *infile = fopen(argv[1], "r");
         if (infile == NULL) {
@@ -97,6 +100,9 @@ int main(int argc, char **argv) {
         lex.infile = infile;
         lex.getc = &file_getc;
         lex.ungetc = &file_ungetc;
+
+        --argc;
+        ++argv;
     }
 
     lex_state state;
@@ -104,7 +110,7 @@ int main(int argc, char **argv) {
     lex.state = &state;
     lex.tk = NULL;
     risp_env env;
-    env_init(&env);
+    env_init(&env, argc, argv);
     init_native_functions(&env);
 
     int exit_code = 0;

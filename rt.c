@@ -365,7 +365,7 @@ void var_frame_free_all(risp_env *env) {
 /**
  * Initialize a new Risp execution environment.
  */
-void env_init(risp_env *env) {
+void env_init(risp_env *env, int argc, char **argv) {
     env->heap_len = 0;
     env->heap_cap = 64 * 1024 * 1024;
     env->heap = malloc(env->heap_cap);
@@ -380,6 +380,22 @@ void env_init(risp_env *env) {
     }
 
     push_var_frame(env, make_var_frame_inner(env));
+
+    risp_eobject *args = register_ephemeral_object(env, &Qnil);
+    for (int i = argc - 1; i >= 0; --i) {
+        usize len = strlen(argv[i]);
+        risp_eobject *cons = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        risp_object *arg = alloc_str_like(env, T_STRING, len);
+        memcpy(arg->str_data, argv[i], len);
+        cons->o->car = arg;
+        cons->o->cdr = args->o;
+        unregister_ephemeral_object(env, args);
+        args = cons;
+    }
+    risp_object *args_sym = intern_symbol(env, "args");
+
+    make_global_variable(env, args_sym, args->o);
+    unregister_ephemeral_object(env, args);
 }
 
 /**

@@ -167,7 +167,7 @@ DEFUN(car) {
         return NULL;
     }
 
-    if (list->type != T_CONS) {
+    if (list == &Qnil || list == &Qt || list->type != T_CONS) {
         signal_error_s(env, "Argument is not cons");
         return NULL;
     }
@@ -188,7 +188,7 @@ DEFUN(cdr) {
         return NULL;
     }
 
-    if (list->type != T_CONS) {
+    if (list == &Qnil || list == &Qt || list->type != T_CONS) {
         signal_error_s(env, "Argument is not cons");
         return NULL;
     }

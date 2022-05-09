@@ -94,7 +94,7 @@ risp_object *collect_lexical_variables(risp_env *env);
 risp_object *intern_symbol(risp_env *env, const char *name);
 
 void var_frame_free_all(risp_env *env);
-void env_init(risp_env *env);
+void env_init(risp_env *env, int argc, char **argv);
 void init_native_functions(risp_env *env);
 i32 read_and_eval(lexer *lex, risp_env *env);
 
