@@ -21,7 +21,7 @@ static i64 list_length(risp_env *env, risp_object *list) {
     return result;
 }
 
-static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg) {
+static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool *spliced) {
     if (arg == &Qnil || arg == &Qt) {
         return arg;
     }
@@ -54,20 +54,77 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg) {
                 return r;
             }
 
+            risp_object *splice = intern_symbol(env, "splice");
+            if (earg->o->car == splice) {
+                arg = earg->o;
+                unregister_ephemeral_object(env, earg);
+                if (list_length(env, arg->cdr) != 1) {
+                    if (get_error(env) != &Qnil) {
+                        signal_error_s(env, "1 argument required");
+                    }
+                    return NULL;
+                }
+
+                risp_object *elements = eval_exp(env, arg->cdr->car);
+                if (get_error(env) != &Qnil) {
+                    return NULL;
+                }
+
+                if (spliced != NULL) {
+                    *spliced = true;
+                }
+
+                return elements;
+            }
+
             unregister_ephemeral_object(env, earg);
         }
 
-        risp_eobject *result = register_ephemeral_object(env, arg);
+        risp_object *result_head = alloc_object(env, T_CONS);
+        risp_eobject *result = register_ephemeral_object(env, result_head);
+        risp_eobject *result_prev = register_ephemeral_object(env, result_head);
         risp_eobject *cur = register_ephemeral_object(env, arg);
         while (cur->o != &Qnil) {
-            risp_object *element = handle_backquote_inner(env, cur->o->car);
+            bool spliced = false;
+            risp_object *element = handle_backquote_inner(env, cur->o->car, &spliced);
             if (get_error(env) != &Qnil) {
                 unregister_ephemeral_object(env, cur);
+                unregister_ephemeral_object(env, result_prev);
                 unregister_ephemeral_object(env, result);
                 return NULL;
             }
 
-            cur->o->car = element;
+            if (spliced) {
+                result_prev->o->cdr = element;
+
+                risp_object *next = element;
+                while (next->type == T_CONS && next != &Qnil && next != &Qt && next->cdr != &Qnil) {
+                    next = next->cdr;
+                }
+
+                unregister_ephemeral_object(env, result_prev);
+                result_prev = register_ephemeral_object(env, next);
+            } else {
+                if (result_prev->o == &Qnil || result_prev->o == &Qt || result_prev->o->type != T_CONS) {
+                    unregister_ephemeral_object(env, cur);
+                    unregister_ephemeral_object(env, result_prev);
+                    unregister_ephemeral_object(env, result);
+                    signal_error_s(env, "invalid backquote element");
+                    return NULL;
+                }
+
+                risp_eobject *eelement = register_ephemeral_object(env, element);
+
+                risp_object *cons = alloc_object(env, T_CONS);
+                cons->car = eelement->o;
+                cons->cdr = &Qnil;
+                result_prev->o->cdr = cons;
+                unregister_ephemeral_object(env, result_prev);
+                result_prev = register_ephemeral_object(env, cons);
+
+                unregister_ephemeral_object(env, eelement);
+            }
+
             if (cur->o->cdr->type != T_CONS || cur->o->cdr == &Qt) {
                 break;
             }
@@ -77,8 +134,9 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg) {
             cur = register_ephemeral_object(env, next);
         }
         unregister_ephemeral_object(env, cur);
+        unregister_ephemeral_object(env, result_prev);
 
-        risp_object *r = result->o;
+        risp_object *r = result->o->cdr;
         unregister_ephemeral_object(env, result);
         return r;
     }
@@ -93,7 +151,7 @@ DEFUN(backquote) {
         return NULL;
     }
 
-    return handle_backquote_inner(env, args->car);
+    return handle_backquote_inner(env, args->car, NULL);
 }
 
 DEFUN(defun) {

@@ -179,6 +179,10 @@ risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj) {
  * After passing object to this function, values are not defended from GC.
  */
 void unregister_ephemeral_object(risp_env *env, risp_eobject *registered) {
+    if (registered == NULL) {
+        return;
+    }
+
     for (risp_eobject *eo = env->ephemeral, *prev = NULL; eo != NULL; eo = eo->next) {
         if (eo == registered) {
             if (prev == NULL) {
@@ -1177,7 +1181,7 @@ static void repr_object(risp_env *env, risp_object *obj);
 static void repr_list(risp_env *env, risp_object *obj) {
     if (obj == &Qnil) {
         putchar(')');
-    } else if (obj->type == T_CONS) {
+    } else if (obj->type == T_CONS && obj != &Qt) {
         putchar(' ');
         repr_object(env, obj->car);
         repr_list(env, obj->cdr);
