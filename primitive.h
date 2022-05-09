@@ -24,5 +24,6 @@ DEFUN(print);
 DEFUN(progn);
 DEFUN(quote);
 DEFUN(setq);
+DEFUN(while);
 
 #endif

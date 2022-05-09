@@ -749,3 +749,48 @@ DEFUN(setq) {
     unregister_ephemeral_object(env, last);
     return r;
 }
+
+DEFUN(while) {
+    if (list_length(env, args) < 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "condition required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *cond = register_ephemeral_object(env, args->car);
+    risp_eobject *body = register_ephemeral_object(env, args->cdr);
+
+    for (;;) {
+        risp_object *cond_result = eval_exp(env, cond->o);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, body);
+            unregister_ephemeral_object(env, cond);
+            return NULL;
+        }
+
+        if (cond_result == &Qnil) {
+            break;
+        }
+
+        risp_eobject *cur_body = register_ephemeral_object(env, body->o);
+        while (cur_body->o != &Qnil) {
+            eval_exp(env, cur_body->o->car);
+            if (get_error(env) != &Qnil) {
+                unregister_ephemeral_object(env, cur_body);
+                unregister_ephemeral_object(env, body);
+                unregister_ephemeral_object(env, cond);
+                return NULL;
+            }
+
+            risp_object *next = cur_body->o->cdr;
+            unregister_ephemeral_object(env, cur_body);
+            cur_body = register_ephemeral_object(env, next);
+        }
+        unregister_ephemeral_object(env, cur_body);
+    }
+    unregister_ephemeral_object(env, body);
+    unregister_ephemeral_object(env, cond);
+
+    return &Qnil;
+}

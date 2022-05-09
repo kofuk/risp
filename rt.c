@@ -1379,4 +1379,5 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "progn", RISP_FUNC(progn));
     register_native_function(env, "quote", RISP_FUNC(quote));
     register_native_function(env, "setq", RISP_FUNC(setq));
+    register_native_function(env, "while", RISP_FUNC(while));
 }
