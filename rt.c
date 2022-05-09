@@ -1189,10 +1189,10 @@ static risp_object *read_exp(lexer *lex, risp_error *err, risp_env *env) {
     return NULL;
 }
 
-static void repr_object(risp_env *env, risp_object *obj);
-
 /**
  * Print representation of the list.
+ *
+ * Note: This function can run GC.
  */
 static void repr_list(risp_env *env, risp_object *obj) {
     if (obj == &Qnil) {
@@ -1210,8 +1210,10 @@ static void repr_list(risp_env *env, risp_object *obj) {
 
 /**
  * Print representation of the object.
+ *
+ * Note: This function can run GC.
  */
-static void repr_object(risp_env *env, risp_object *obj) {
+void repr_object(risp_env *env, risp_object *obj) {
     if (obj == &Qnil) {
         fputs("nil", stdout);
         return;

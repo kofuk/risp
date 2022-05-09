@@ -82,6 +82,8 @@ risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *a
 risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *args);
 void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_object *body);
 
+void repr_object(risp_env *env, risp_object *obj);
+
 risp_object *alloc_object(risp_env *env, risp_type type);
 risp_object *alloc_str_like(risp_env *env, risp_type type, usize len);
 

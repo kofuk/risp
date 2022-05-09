@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 
@@ -828,10 +829,8 @@ DEFUN(print) {
         } else if (target->type == T_STRING) {
             printf("%.*s\n", (int)target->str_len, target->str_data);
         } else {
-            unregister_ephemeral_object(env, cur);
-
-            signal_error_s(env, "argument type must be stings or ints");
-            return NULL;
+            repr_object(env, target);
+            putchar('\n');
         }
 
         risp_object *prev = cur->o;
