@@ -461,6 +461,8 @@ DEFUN(if) {
 
     risp_object *cond_val = eval_exp(env, cond);
     if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, rest);
+        unregister_ephemeral_object(env, then);
         return NULL;
     }
 
@@ -583,6 +585,26 @@ DEFUN(length) {
     r->integer = result;
 
     return r;
+}
+
+DEFUN(let) {
+    if (list_length(env, args) < 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "variable list required");
+        }
+        return NULL;
+    }
+
+    list_length(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    risp_object *result = run_with_local_vars(env, args->car, args->cdr);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+    return result;
 }
 
 DEFUN(lt) {
@@ -769,6 +791,22 @@ DEFUN(multiply) {
     return r;
 }
 
+DEFUN(not ) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) != &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *obj = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return obj == &Qnil ? &Qt : &Qnil;
+}
+
 DEFUN(plus) {
     list_length(env, args);
     if (get_error(env) != &Qnil) {
@@ -876,6 +914,17 @@ DEFUN(quote) {
     }
 
     return args->car;
+}
+
+DEFUN(raise) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+    signal_error(env, args->car);
+    return NULL;
 }
 
 DEFUN(setcar) {

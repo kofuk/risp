@@ -637,7 +637,7 @@ static bool prepare_function_var_stack(risp_env *env, risp_object *arglist, risp
         make_variable(env, vars, cur_arg_sym->o->car, arg_objs[i]->o, false);
         unregister_ephemeral_object(env, arg_objs[i]);
 
-        risp_object *next_arg_sym = arg_sym->o->cdr;
+        risp_object *next_arg_sym = cur_arg_sym->o->cdr;
         unregister_ephemeral_object(env, cur_arg_sym);
         cur_arg_sym = register_ephemeral_object(env, next_arg_sym);
     }
@@ -838,6 +838,90 @@ void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_ob
     unregister_ephemeral_object(env, elist);
 
     pop_var_frame(env);
+}
+
+risp_object *run_with_local_vars(risp_env *env, risp_object *vars, risp_object *body) {
+    risp_vars *var_frame = make_var_frame_inner(env);
+
+    risp_eobject *cur_var = register_ephemeral_object(env, vars);
+    risp_eobject *ebody = register_ephemeral_object(env, body);
+    while (cur_var->o != &Qnil) {
+        risp_object *cur = cur_var->o->car;
+        if (cur == &Qnil || cur == &Qt || cur->type != T_CONS) {
+            unregister_ephemeral_object(env, ebody);
+            unregister_ephemeral_object(env, cur_var);
+            push_var_frame(env, var_frame);
+            pop_var_frame(env);
+            signal_error_s(env, "Illegal var list");
+            return NULL;
+        }
+        if (cur->car->type != T_SYMBOL) {
+            unregister_ephemeral_object(env, ebody);
+            unregister_ephemeral_object(env, cur_var);
+            push_var_frame(env, var_frame);
+            pop_var_frame(env);
+            signal_error_s(env, "First element of var list must be a symbol");
+            return NULL;
+        }
+        if (cur->cdr != &Qt && cur->cdr != &Qt && cur->cdr->type == T_CONS) {
+            if (cur->cdr->cdr != &Qnil) {
+                unregister_ephemeral_object(env, ebody);
+                unregister_ephemeral_object(env, cur_var);
+                push_var_frame(env, var_frame);
+                pop_var_frame(env);
+                signal_error_s(env, "Illegal var list");
+                return NULL;
+            }
+
+            risp_eobject *sym = register_ephemeral_object(env, cur->car);
+            risp_object *val = eval_exp(env, cur->cdr->car);
+            if (get_error(env) != &Qnil) {
+                unregister_ephemeral_object(env, ebody);
+                unregister_ephemeral_object(env, cur_var);
+                push_var_frame(env, var_frame);
+                pop_var_frame(env);
+                return NULL;
+            }
+            make_variable(env, var_frame, sym->o, val, false);
+            unregister_ephemeral_object(env, sym);
+        } else if (cur->cdr == &Qnil) {
+            make_variable(env, var_frame, cur->car, &Qnil, false);
+        } else {
+            unregister_ephemeral_object(env, ebody);
+            unregister_ephemeral_object(env, cur_var);
+            push_var_frame(env, var_frame);
+            pop_var_frame(env);
+            signal_error_s(env, "Illegal var list");
+            return NULL;
+        }
+
+        risp_object *next = cur_var->o->cdr;
+        unregister_ephemeral_object(env, cur_var);
+        cur_var = register_ephemeral_object(env, next);
+    }
+    unregister_ephemeral_object(env, cur_var);
+
+    push_var_frame(env, var_frame);
+
+    risp_object *result = &Qnil;
+
+    while (ebody->o != &Qnil) {
+        result = eval_exp(env, ebody->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, ebody);
+            pop_var_frame(env);
+            return NULL;
+        }
+
+        risp_object *next = ebody->o->cdr;
+        unregister_ephemeral_object(env, ebody);
+        ebody = register_ephemeral_object(env, next);
+    }
+    unregister_ephemeral_object(env, ebody);
+
+    pop_var_frame(env);
+
+    return result;
 }
 
 /**
@@ -1399,10 +1483,13 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
+    register_native_function(env, "let", RISP_FUNC(let));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
+    register_native_function(env, "not", RISP_FUNC(not ));
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "progn", RISP_FUNC(progn));
     register_native_function(env, "quote", RISP_FUNC(quote));
+    register_native_function(env, "raise", RISP_FUNC(raise));
     register_native_function(env, "setcar", RISP_FUNC(setcar));
     register_native_function(env, "setcdr", RISP_FUNC(setcdr));
     register_native_function(env, "setq", RISP_FUNC(setq));
