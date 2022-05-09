@@ -24,6 +24,8 @@ DEFUN(make_symbol);
 DEFUN(minus);
 DEFUN(multiply);
 DEFUN(not );
+DEFUN(nth);
+DEFUN(nthcdr);
 DEFUN(plus);
 DEFUN(print);
 DEFUN(progn);
@@ -32,6 +34,7 @@ DEFUN(raise);
 DEFUN(setcar);
 DEFUN(setcdr);
 DEFUN(setq);
+DEFUN(stringeq);
 DEFUN(while);
 
 #endif

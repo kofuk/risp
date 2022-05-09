@@ -814,6 +814,62 @@ DEFUN(not ) {
     return obj == &Qnil ? &Qt : &Qnil;
 }
 
+DEFUN(nth) {
+    risp_object *nth_cdr = RISP_FUNC(nthcdr)(env, args);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+    return nth_cdr->car;
+}
+
+DEFUN(nthcdr) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *list_exp = register_ephemeral_object(env, args->cdr->car);
+
+    risp_object *index = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, list_exp);
+        return NULL;
+    }
+    if (index->type != T_INT) {
+        unregister_ephemeral_object(env, list_exp);
+        signal_error_s(env, "index must be int");
+        return NULL;
+    }
+
+    i64 n = index->integer;
+
+    risp_object *list_arg = list_exp->o;
+    unregister_ephemeral_object(env, list_exp);
+    risp_object *list = eval_exp(env, list_arg);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    i64 len = list_length(env, list);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (n >= len) {
+        signal_error_s(env, "Index out of range");
+        return NULL;
+    }
+
+    risp_object *cur = list;
+    for (i64 i = 0; i < n; ++i) {
+        cur = cur->cdr;
+    }
+
+    return cur;
+}
+
 DEFUN(plus) {
     list_length(env, args);
     if (get_error(env) != &Qnil) {
@@ -1054,6 +1110,46 @@ DEFUN(setq) {
     risp_object *r = last->o;
     unregister_ephemeral_object(env, last);
     return r;
+}
+
+DEFUN(stringeq) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments expected");
+        }
+        return NULL;
+    }
+
+    risp_eobject *arg2 = register_ephemeral_object(env, args->cdr->car);
+
+    risp_object *o1 = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, arg2);
+        return NULL;
+    }
+
+    risp_eobject *eo1 = register_ephemeral_object(env, o1);
+
+    risp_object *o2 = eval_exp(env, arg2->o);
+    unregister_ephemeral_object(env, arg2);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eo1);
+        return NULL;
+    }
+
+    o1 = eo1->o;
+    unregister_ephemeral_object(env, eo1);
+
+    if (o1->type != T_STRING || o2->type != T_STRING) {
+        signal_error_s(env, "Both arguments must be string");
+        return NULL;
+    }
+
+    if (o1->str_len != o2->str_len) {
+        return &Qnil;
+    }
+
+    return !memcmp(o1->str_data, o2->str_data, o1->str_len) ? &Qt : &Qnil;
 }
 
 DEFUN(while) {

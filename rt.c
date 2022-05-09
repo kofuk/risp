@@ -1485,6 +1485,8 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "length", RISP_FUNC(length));
     register_native_function(env, "let", RISP_FUNC(let));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
+    register_native_function(env, "nth", RISP_FUNC(nth));
+    register_native_function(env, "nthcdr", RISP_FUNC(nthcdr));
     register_native_function(env, "not", RISP_FUNC(not ));
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "progn", RISP_FUNC(progn));
@@ -1493,5 +1495,6 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "setcar", RISP_FUNC(setcar));
     register_native_function(env, "setcdr", RISP_FUNC(setcdr));
     register_native_function(env, "setq", RISP_FUNC(setq));
+    register_native_function(env, "string=", RISP_FUNC(stringeq));
     register_native_function(env, "while", RISP_FUNC(while));
 }
