@@ -21,6 +21,81 @@ static i64 list_length(risp_env *env, risp_object *list) {
     return result;
 }
 
+static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg) {
+    if (arg == &Qnil || arg == &Qt) {
+        return arg;
+    }
+
+    if (arg->type == T_CONS) {
+        if (arg->car->type == T_SYMBOL) {
+            risp_eobject *earg = register_ephemeral_object(env, arg);
+            risp_object *unquote = intern_symbol(env, "unquote");
+            if (earg->o->car == unquote) {
+                arg = earg->o;
+                unregister_ephemeral_object(env, earg);
+                if (list_length(env, arg->cdr) != 1) {
+                    if (get_error(env) != &Qnil) {
+                        signal_error_s(env, "1 argument required");
+                    }
+                    return NULL;
+                }
+
+                risp_object *result = eval_exp(env, arg->cdr->car);
+                if (get_error(env) != &Qnil) {
+                    return NULL;
+                }
+                return result;
+            }
+
+            risp_object *backquote = intern_symbol(env, "backquote");
+            if (earg->o->car == backquote) {
+                risp_object *r = earg->o;
+                unregister_ephemeral_object(env, earg);
+                return r;
+            }
+
+            unregister_ephemeral_object(env, earg);
+        }
+
+        risp_eobject *result = register_ephemeral_object(env, arg);
+        risp_eobject *cur = register_ephemeral_object(env, arg);
+        while (cur->o != &Qnil) {
+            risp_object *element = handle_backquote_inner(env, cur->o->car);
+            if (get_error(env) != &Qnil) {
+                unregister_ephemeral_object(env, cur);
+                unregister_ephemeral_object(env, result);
+                return NULL;
+            }
+
+            cur->o->car = element;
+            if (cur->o->cdr->type != T_CONS || cur->o->cdr == &Qt) {
+                break;
+            }
+
+            risp_object *next = cur->o->cdr;
+            unregister_ephemeral_object(env, cur);
+            cur = register_ephemeral_object(env, next);
+        }
+        unregister_ephemeral_object(env, cur);
+
+        risp_object *r = result->o;
+        unregister_ephemeral_object(env, result);
+        return r;
+    }
+    return arg;
+}
+
+DEFUN(backquote) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    return handle_backquote_inner(env, args->car);
+}
+
 DEFUN(defun) {
     if (list_length(env, args) < 3) {
         if (get_error(env) == &Qnil) {

@@ -1365,6 +1365,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "*", RISP_FUNC(multiply));
     register_native_function(env, "/", RISP_FUNC(divide));
     register_native_function(env, "<", RISP_FUNC(lt));
+    register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));
