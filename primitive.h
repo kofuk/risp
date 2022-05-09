@@ -7,6 +7,8 @@
 #define RISP_FUNC(name) RISP_DEFUN_##name
 
 DEFUN(backquote);
+DEFUN(car);
+DEFUN(cdr);
 DEFUN(defun);
 DEFUN(divide);
 DEFUN(dolist);
@@ -24,6 +26,8 @@ DEFUN(plus);
 DEFUN(print);
 DEFUN(progn);
 DEFUN(quote);
+DEFUN(setcar);
+DEFUN(setcdr);
 DEFUN(setq);
 DEFUN(while);
 

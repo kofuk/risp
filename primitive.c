@@ -154,6 +154,48 @@ DEFUN(backquote) {
     return handle_backquote_inner(env, args->car, NULL);
 }
 
+DEFUN(car) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *list = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (list->type != T_CONS) {
+        signal_error_s(env, "Argument is not cons");
+        return NULL;
+    }
+
+    return list->car;
+}
+
+DEFUN(cdr) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *list = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (list->type != T_CONS) {
+        signal_error_s(env, "Argument is not cons");
+        return NULL;
+    }
+
+    return list->cdr;
+}
+
 DEFUN(defun) {
     if (list_length(env, args) < 3) {
         if (get_error(env) == &Qnil) {
@@ -835,6 +877,82 @@ DEFUN(quote) {
     }
 
     return args->car;
+}
+
+DEFUN(setcar) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *e_val = register_ephemeral_object(env, args->cdr->car);
+    risp_object *cell = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, e_val);
+        return NULL;
+    }
+
+    if (cell->type != T_CONS) {
+        unregister_ephemeral_object(env, e_val);
+        signal_error_s(env, "cell must be a cons cell");
+        return NULL;
+    }
+
+    risp_eobject *ecell = register_ephemeral_object(env, cell);
+
+    risp_object *val = e_val->o;
+    unregister_ephemeral_object(env, e_val);
+
+    val = eval_exp(env, val);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, ecell);
+        return NULL;
+    }
+
+    ecell->o->car = val;
+    unregister_ephemeral_object(env, ecell);
+
+    return val;
+}
+
+DEFUN(setcdr) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguments required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *e_val = register_ephemeral_object(env, args->cdr->car);
+    risp_object *cell = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, e_val);
+        return NULL;
+    }
+
+    if (cell->type != T_CONS) {
+        unregister_ephemeral_object(env, e_val);
+        signal_error_s(env, "cell must be a cons cell");
+        return NULL;
+    }
+
+    risp_eobject *ecell = register_ephemeral_object(env, cell);
+
+    risp_object *val = e_val->o;
+    unregister_ephemeral_object(env, e_val);
+
+    val = eval_exp(env, val);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, ecell);
+        return NULL;
+    }
+
+    ecell->o->cdr = val;
+    unregister_ephemeral_object(env, ecell);
+
+    return val;
 }
 
 DEFUN(setq) {
