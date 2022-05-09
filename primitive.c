@@ -319,6 +319,13 @@ DEFUN(dolist) {
         return NULL;
     }
 
+    list_length(env, list);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, ebody);
+        unregister_ephemeral_object(env, evar);
+        return NULL;
+    }
+
     risp_eobject *result = register_ephemeral_object(env, arg->cdr->cdr);
 
     risp_object *body = ebody->o;
