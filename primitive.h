@@ -9,6 +9,10 @@
 DEFUN(backquote);
 DEFUN(car);
 DEFUN(cdr);
+DEFUN(coin);
+DEFUN(clock);
+DEFUN(clock_free);
+DEFUN(clock_print_diff);
 DEFUN(defun);
 DEFUN(divide);
 DEFUN(dolist);

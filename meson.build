@@ -13,7 +13,8 @@ risp_src = [
   'main.c',
   'parse.c',
   'primitive.c',
-  'rt.c'
+  'rt.c',
+  'coin.c'
 ]
 executable(
   'risp',

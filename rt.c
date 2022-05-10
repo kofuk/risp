@@ -1474,6 +1474,10 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
+    register_native_function(env, "coin", RISP_FUNC(coin));
+    register_native_function(env, "clock", RISP_FUNC(clock));
+    register_native_function(env, "clock-free", RISP_FUNC(clock_free));
+    register_native_function(env, "clock-print-diff", RISP_FUNC(clock_print_diff));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));

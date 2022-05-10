@@ -1,9 +1,13 @@
+#include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
 
 #include "primitive.h"
 #include "rt.h"
+#include "coin.h"
 
 /**
  * Calculate length of the given `list'.
@@ -195,6 +199,224 @@ DEFUN(cdr) {
     }
 
     return list->cdr;
+}
+
+static char *risp_object_to_str(risp_object *o) {
+    assert(o->type == T_STRING);
+
+    usize len = o->str_len;
+    char *buf = malloc(len + 1);
+    buf[len] = '\0';
+    memcpy(buf, o->str_data, len);
+    return buf;
+}
+
+DEFUN(coin) {
+    if (list_length(env, args) != 4) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "4 arguments required");
+        }
+        return NULL;
+    }
+
+    char *sw1 = NULL;
+    char *sb1 = NULL;
+    char *sw2 = NULL;
+    char *sb2 = NULL;
+
+    risp_eobject *eb1 = register_ephemeral_object(env, args->cdr->car);
+    risp_eobject *ew2 = register_ephemeral_object(env, args->cdr->cdr->car);
+    risp_eobject *eb2 = register_ephemeral_object(env, args->cdr->cdr->cdr->car);
+
+    risp_object *w1 = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eb2);
+        unregister_ephemeral_object(env, ew2);
+        unregister_ephemeral_object(env, eb1);
+        goto err_clean_str;
+    }
+
+    if (w1->type != T_STRING) {
+        unregister_ephemeral_object(env, eb2);
+        unregister_ephemeral_object(env, ew2);
+        unregister_ephemeral_object(env, eb1);
+        signal_error_s(env, "Argument must be string");
+        return NULL;
+    }
+
+    sw1 = risp_object_to_str(w1);
+
+    risp_object *b1 = eb1->o;
+    unregister_ephemeral_object(env, eb1);
+    b1 = eval_exp(env, b1);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eb2);
+        unregister_ephemeral_object(env, ew2);
+        goto err_clean_str;
+    }
+
+    if (b1->type != T_STRING) {
+        unregister_ephemeral_object(env, eb2);
+        unregister_ephemeral_object(env, ew2);
+        signal_error_s(env, "Argument must be string");
+        goto err_clean_str;
+    }
+
+    sb1 = risp_object_to_str(b1);
+
+    risp_object *w2 = ew2->o;
+    unregister_ephemeral_object(env, ew2);
+    w2 = eval_exp(env, w2);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eb2);
+        goto err_clean_str;
+    }
+
+    if (w2->type != T_STRING) {
+        unregister_ephemeral_object(env, eb2);
+        signal_error_s(env, "Argument must be string");
+        goto err_clean_str;
+    }
+
+    sw2 = risp_object_to_str(w2);
+
+    risp_object *b2 = eb2->o;
+    unregister_ephemeral_object(env, eb2);
+    b2 = eval_exp(env, b2);
+    if (get_error(env) != &Qnil) {
+        goto err_clean_str;
+    }
+
+    if (b2->type != T_STRING) {
+        signal_error_s(env, "Argument must be string");
+        goto err_clean_str;
+    }
+
+    sb2 = risp_object_to_str(b2);
+
+    char *rev_solution = do_coin(env, sw1, sb1, sw2, sb2);
+    free(sw1);
+    free(sb1);
+    free(sw2);
+    free(sb2);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    char *sol_head = rev_solution;
+
+    risp_eobject *result = register_ephemeral_object(env, &Qnil);
+    while (*rev_solution != '\0') {
+        risp_eobject *cur = register_ephemeral_object(env, alloc_object(env, T_CONS));
+        cur->o->car = &Qnil;
+        cur->o->cdr = result->o;
+
+        risp_object *sol = alloc_str_like(env, T_STRING, 2);
+        memcpy(sol->str_data, rev_solution, 2);
+        cur->o->car = sol;
+
+        unregister_ephemeral_object(env, result);
+        result = cur;
+
+        rev_solution += 2;
+    }
+
+    free(sol_head);
+
+    risp_object *r = result->o;
+    unregister_ephemeral_object(env, result);
+    return r;
+
+err_clean_str:
+    free(sb2);
+    free(sw2);
+    free(sb1);
+    free(sw1);
+    return NULL;
+}
+
+DEFUN(clock) {
+    if (list_length(env, args) != 0) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "No argument required");
+        }
+        return NULL;
+    }
+
+    clock_t clk = clock();
+    clock_t *clk_buf = malloc(sizeof(clock_t));
+    memcpy(clk_buf, &clk, sizeof(clock_t));
+
+    risp_object *r = alloc_object(env, T_NATIVE_HANDLE);
+    r->native_handle = clk_buf;
+
+    return r;
+}
+
+DEFUN(clock_free) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "1 arguemnt required");
+        }
+        return NULL;
+    }
+
+    risp_object *obj = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    if (obj->type != T_NATIVE_HANDLE) {
+        signal_error_s(env, "object must be a native handle");
+        return NULL;
+    }
+
+    free(obj->native_handle);
+    obj->native_handle = NULL;
+
+    return &Qnil;
+}
+
+DEFUN(clock_print_diff) {
+    if (list_length(env, args) != 2) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "2 arguemnt required");
+        }
+        return NULL;
+    }
+
+    risp_eobject *eobj2 = register_ephemeral_object(env, args->cdr->car);
+    risp_object *c1 = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, eobj2);
+        return NULL;
+    }
+
+    if (c1->type != T_NATIVE_HANDLE) {
+        signal_error_s(env, "object must be a native handle");
+        return NULL;
+    }
+
+    risp_eobject *ec1 = register_ephemeral_object(env, c1);
+
+    risp_object *obj2 = eobj2->o;
+    unregister_ephemeral_object(env, eobj2);
+
+    risp_object *c2 = eval_exp(env, obj2);
+    if (get_error(env) != &Qnil) {
+        unregister_ephemeral_object(env, ec1);
+        return NULL;
+    }
+
+    c1 = ec1->o;
+    unregister_ephemeral_object(env, ec1);
+
+    clock_t clk1 = *(clock_t *)c1->native_handle;
+    clock_t clk2 = *(clock_t *)c2->native_handle;
+
+    printf("%lfs\n", (double)(clk1 - clk2) / CLOCKS_PER_SEC);
+
+    return &Qnil;
 }
 
 DEFUN(defun) {
