@@ -143,6 +143,27 @@ static void run_gc(risp_env *env) {
             }
             break;
 
+        case T_MACRO:
+            if (scan_ptr->macro.arglist != &Qnil && scan_ptr->macro.arglist != &Qt) {
+                if (scan_ptr->macro.arglist->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->macro.arglist);
+                    scan_ptr->macro.arglist = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->macro.arglist = scan_ptr->macro.arglist->forwarding;
+                }
+            }
+            if (scan_ptr->macro.body != &Qnil && scan_ptr->macro.body != &Qt) {
+                if (scan_ptr->macro.body->forwarding == NULL) {
+                    new_len += copy_object(free_ptr, scan_ptr->macro.body);
+                    scan_ptr->macro.body = free_ptr;
+                    free_ptr = (void *)((char *)new_heap + new_len);
+                } else {
+                    scan_ptr->macro.body = scan_ptr->macro.body->forwarding;
+                }
+            }
+            break;
+
         case T_STRING:
         case T_SYMBOL:
         case T_KWSYMBOL:
@@ -840,6 +861,80 @@ void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_ob
     pop_var_frame(env);
 }
 
+static risp_object *expand_macro_and_run(risp_env *env, risp_object *macro, risp_object *args) {
+    push_var_frame(env, make_var_frame_isolated(env));
+
+    risp_object *arglist = macro->macro.arglist;
+    for (;;) {
+        if ((arglist != &Qnil && args == &Qnil) || (arglist == &Qnil && args != &Qnil)) {
+            pop_var_frame(env);
+            signal_error_s(env, "wrong number of arguments");
+            return NULL;
+        }
+        if (arglist == &Qnil && args == &Qnil) {
+            break;
+        }
+
+        if (arglist == &Qt || arglist->type != T_CONS || arglist->car->type != T_SYMBOL) {
+            pop_var_frame(env);
+            signal_error_s(env, "invalid arglist");
+            return NULL;
+        }
+
+        if (args == &Qt || args->type != T_CONS) {
+            pop_var_frame(env);
+            signal_error_s(env, "invalid macro call");
+            return NULL;
+        }
+
+        make_local_variable(env, arglist->car, args->car, false);
+
+        if (arglist->cdr->type != T_CONS || args->cdr->type != T_CONS) {
+            pop_var_frame(env);
+            signal_error_s(env, "invalid macro call");
+            return NULL;
+        }
+
+        arglist = arglist->cdr;
+        args = args->cdr;
+    }
+
+    risp_object *exe = &Qnil;
+
+    risp_eobject *body = register_ephemeral_object(env, macro->macro.body);
+
+    while (body->o != &Qnil) {
+        if (body->o == &Qt || body->o->type != T_CONS) {
+            unregister_ephemeral_object(env, body);
+            pop_var_frame(env);
+            signal_error_s(env, "invalid macro body");
+            return NULL;
+        }
+
+        exe = eval_exp(env, body->o->car);
+        if (get_error(env) != &Qnil) {
+            unregister_ephemeral_object(env, body);
+            pop_var_frame(env);
+            return NULL;
+        }
+
+        risp_object *next = body->o->cdr;
+        unregister_ephemeral_object(env, body);
+        body = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, body);
+
+    pop_var_frame(env);
+
+    risp_object *result = eval_exp(env, exe);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return result;
+}
+
 risp_object *run_with_local_vars(risp_env *env, risp_object *vars, risp_object *body) {
     risp_vars *var_frame = make_var_frame_inner(env);
 
@@ -953,8 +1048,10 @@ risp_object *eval_exp(risp_env *env, risp_object *exp) {
             return func->native_func(env, exp->cdr);
         } else if (func->type == T_FUNC) {
             return call_risp_function(env, func, exp->cdr);
+        } else if (func->type == T_MACRO) {
+            return expand_macro_and_run(env, func, exp->cdr);
         } else {
-            signal_error_s(env, "void function");
+            signal_error_s(env, "void function or macro");
         }
         return NULL;
     }
@@ -963,6 +1060,7 @@ risp_object *eval_exp(risp_env *env, risp_object *exp) {
     case T_KWSYMBOL:
     case T_INT:
     case T_FUNC:
+    case T_MACRO:
     case T_NATIVE_FUNC:
     case T_NATIVE_HANDLE:
         return exp;
@@ -1384,6 +1482,10 @@ void repr_object(risp_env *env, risp_object *obj) {
         fputs("<func>", stderr);
         break;
 
+    case T_MACRO:
+        fputs("<macro>", stderr);
+        break;
+
     case T_NATIVE_FUNC:
         printf("<native_func@%p>", ((union {
                                         void *p;
@@ -1474,6 +1576,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
+    register_native_function(env, "defmacro", RISP_FUNC(defmacro));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));

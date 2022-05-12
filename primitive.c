@@ -197,6 +197,49 @@ DEFUN(cdr) {
     return list->cdr;
 }
 
+DEFUN(defmacro) {
+    if (list_length(env, args) < 3) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "macro name and argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *macro_sym = args->car;
+    risp_object *macro_arg = args->cdr->car;
+    risp_object *macro_body = args->cdr->cdr;
+
+    if (macro_sym->type != T_SYMBOL) {
+        signal_error_s(env, "macro name must be a symbol");
+        return NULL;
+    }
+
+    for (risp_object *a = macro_arg; a != &Qnil; a = a->cdr) {
+        if (a->car->type != T_SYMBOL) {
+            signal_error_s(env, "macro must be a symbol");
+            return NULL;
+        }
+    }
+
+    risp_eobject *es = register_ephemeral_object(env, macro_sym);
+    risp_eobject *ea = register_ephemeral_object(env, macro_arg);
+    risp_eobject *eb = register_ephemeral_object(env, macro_body);
+
+    risp_object *macro = alloc_object(env, T_MACRO);
+    macro->macro.arglist = ea->o;
+    macro->macro.body = eb->o;
+
+    make_global_variable(env, es->o, macro);
+
+    macro_sym = es->o;
+
+    unregister_ephemeral_object(env, eb);
+    unregister_ephemeral_object(env, ea);
+    unregister_ephemeral_object(env, es);
+
+    return macro_sym;
+}
+
 DEFUN(defun) {
     if (list_length(env, args) < 3) {
         if (get_error(env) == &Qnil) {
@@ -228,7 +271,6 @@ DEFUN(defun) {
     risp_object *func = alloc_object(env, T_FUNC);
     func->func.arglist = ea->o;
     func->func.body = eb->o;
-    func->func.level = 1;
 
     make_global_variable(env, es->o, func);
 

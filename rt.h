@@ -11,6 +11,7 @@ typedef enum {
     T_KWSYMBOL,
     T_INT,
     T_FUNC,
+    T_MACRO,
     T_NATIVE_FUNC,
     T_NATIVE_HANDLE,
 } risp_type;
@@ -34,8 +35,11 @@ struct risp_object {
         struct {
             struct risp_object *body;
             struct risp_object *arglist;
-            u32 level;
         } func;
+        struct {
+            struct risp_object *body;
+            struct risp_object *arglist;
+        } macro;
         risp_native_func native_func;
         void *native_handle;
     };
