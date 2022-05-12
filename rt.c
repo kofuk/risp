@@ -864,40 +864,61 @@ void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_ob
 static risp_object *expand_macro_and_run(risp_env *env, risp_object *macro, risp_object *args) {
     push_var_frame(env, make_var_frame_isolated(env));
 
-    risp_object *arglist = macro->macro.arglist;
+    risp_eobject *earglist = register_ephemeral_object(env, macro->macro.arglist);
+    risp_eobject *eargs = register_ephemeral_object(env, args);
     for (;;) {
-        if ((arglist != &Qnil && args == &Qnil) || (arglist == &Qnil && args != &Qnil)) {
+        if ((earglist->o != &Qnil && eargs->o == &Qnil) || (earglist->o == &Qnil && eargs->o != &Qnil)) {
+            unregister_ephemeral_object(env, earglist);
+            unregister_ephemeral_object(env, eargs);
+
             pop_var_frame(env);
             signal_error_s(env, "wrong number of arguments");
             return NULL;
         }
-        if (arglist == &Qnil && args == &Qnil) {
+        if (earglist->o == &Qnil && eargs->o == &Qnil) {
             break;
         }
 
-        if (arglist == &Qt || arglist->type != T_CONS || arglist->car->type != T_SYMBOL) {
+        if (earglist->o == &Qt || earglist->o->type != T_CONS || earglist->o->car->type != T_SYMBOL) {
+            unregister_ephemeral_object(env, earglist);
+            unregister_ephemeral_object(env, eargs);
+
             pop_var_frame(env);
             signal_error_s(env, "invalid arglist");
             return NULL;
         }
 
-        if (args == &Qt || args->type != T_CONS) {
+        if (eargs->o == &Qt || eargs->o->type != T_CONS) {
+            unregister_ephemeral_object(env, earglist);
+            unregister_ephemeral_object(env, eargs);
+
             pop_var_frame(env);
             signal_error_s(env, "invalid macro call");
             return NULL;
         }
 
-        make_local_variable(env, arglist->car, args->car, false);
+        make_local_variable(env, earglist->o->car, args->car, false);
 
-        if (arglist->cdr->type != T_CONS || args->cdr->type != T_CONS) {
+        if (earglist->o->cdr->type != T_CONS || eargs->o->cdr->type != T_CONS) {
+            unregister_ephemeral_object(env, earglist);
+            unregister_ephemeral_object(env, eargs);
+
             pop_var_frame(env);
             signal_error_s(env, "invalid macro call");
             return NULL;
         }
 
-        arglist = arglist->cdr;
-        args = args->cdr;
+        risp_object *next_al = earglist->o->cdr;
+        risp_object *next_a = eargs->o->cdr;
+
+        unregister_ephemeral_object(env, earglist);
+        unregister_ephemeral_object(env, eargs);
+
+        earglist = register_ephemeral_object(env, next_al);
+        eargs = register_ephemeral_object(env, next_a);
     }
+    unregister_ephemeral_object(env, earglist);
+    unregister_ephemeral_object(env, eargs);
 
     risp_object *exe = &Qnil;
 
