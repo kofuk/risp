@@ -197,6 +197,22 @@ DEFUN(cdr) {
     return list->cdr;
 }
 
+DEFUN(consp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_CONS ? &Qt : &Qnil;
+}
+
 DEFUN(defmacro) {
     if (list_length(env, args) < 3) {
         if (get_error(env) == &Qnil) {
@@ -496,6 +512,22 @@ DEFUN(funcall) {
     }
 }
 
+DEFUN(functionp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_FUNC ? &Qt : &Qnil;
+}
+
 DEFUN(if) {
     if (list_length(env, args) < 2) {
         if (get_error(env) == &Qnil) {
@@ -546,6 +578,22 @@ DEFUN(if) {
     return result;
 }
 
+DEFUN(integerp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_INT ? &Qt : &Qnil;
+}
+
 DEFUN(intern) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == &Qnil) {
@@ -569,6 +617,27 @@ DEFUN(intern) {
     memcpy(name, name_obj->str_data, name_obj->str_len);
 
     return intern_symbol(env, name);
+}
+
+DEFUN(listp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    list_length(env, val);
+    if (get_error(env) != &Qnil) {
+        clear_error(env);
+        return &Qnil;
+    }
+    return &Qt;
 }
 
 DEFUN(lambda) {
@@ -707,6 +776,22 @@ DEFUN(lt) {
     return ok ? &Qt : &Qnil;
 }
 
+DEFUN(macrop) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_MACRO ? &Qt : &Qnil;
+}
+
 DEFUN(make_symbol) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == &Qnil) {
@@ -838,6 +923,38 @@ DEFUN(multiply) {
     r->integer = result;
 
     return r;
+}
+
+DEFUN(native_function_p) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_NATIVE_FUNC ? &Qt : &Qnil;
+}
+
+DEFUN(native_handle_p) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_NATIVE_HANDLE ? &Qt : &Qnil;
 }
 
 DEFUN(not ) {
@@ -1241,6 +1358,38 @@ DEFUN(stringeq) {
     }
 
     return !memcmp(o1->str_data, o2->str_data, o1->str_len) ? &Qt : &Qnil;
+}
+
+DEFUN(stringp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_STRING ? &Qt : &Qnil;
+}
+
+DEFUN(symbolp) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == &Qnil) {
+            signal_error_s(env, "wrong number of arguments");
+        }
+        return NULL;
+    }
+
+    risp_object *val = eval_exp(env, args->car);
+    if (get_error(env) != &Qnil) {
+        return NULL;
+    }
+
+    return val->type == T_SYMBOL ? &Qt : &Qnil;
 }
 
 DEFUN(while) {

@@ -1576,18 +1576,23 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
+    register_native_function(env, "consp", RISP_FUNC(consp));
     register_native_function(env, "defmacro", RISP_FUNC(defmacro));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
+    register_native_function(env, "functionp", RISP_FUNC(functionp));
     register_native_function(env, "if", RISP_FUNC(if));
+    register_native_function(env, "integerp", RISP_FUNC(integerp));
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
     register_native_function(env, "let", RISP_FUNC(let));
+    register_native_function(env, "macrop", RISP_FUNC(macrop));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));
+    register_native_function(env, "native-function-p", RISP_FUNC(native_function_p));
     register_native_function(env, "nth", RISP_FUNC(nth));
     register_native_function(env, "nthcdr", RISP_FUNC(nthcdr));
     register_native_function(env, "nthchar", RISP_FUNC(nthchar));
@@ -1600,5 +1605,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "setcdr", RISP_FUNC(setcdr));
     register_native_function(env, "setq", RISP_FUNC(setq));
     register_native_function(env, "string=", RISP_FUNC(stringeq));
+    register_native_function(env, "stringp", RISP_FUNC(stringp));
+    register_native_function(env, "symbolp", RISP_FUNC(symbolp));
     register_native_function(env, "while", RISP_FUNC(while));
 }
