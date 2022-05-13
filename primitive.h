@@ -24,6 +24,7 @@ DEFUN(lambda);
 DEFUN(length);
 DEFUN(let);
 DEFUN(listp);
+DEFUN(load);
 DEFUN(lt);
 DEFUN(macrop);
 DEFUN(make_symbol);

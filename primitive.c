@@ -725,6 +725,36 @@ DEFUN(let) {
     return result;
 }
 
+DEFUN(load) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+
+    risp_object *mod = eval_exp(env, args->car);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    if (mod->type != T_STRING) {
+        signal_error_s(env, "module name must be string");
+        return NULL;
+    }
+
+    char *mod_name = alloca(mod->str_len + 1);
+    mod_name[mod->str_len] = '\0';
+    memcpy(mod_name, mod->str_data, mod->str_len);
+
+    risp_object *result = load_module(env, mod_name);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    return result;
+}
+
 DEFUN(lt) {
     if (list_length(env, args) < 1) {
         if (get_error(env) == Qnil) {

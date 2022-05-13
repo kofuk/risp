@@ -73,6 +73,8 @@ struct risp_env {
     u32 flags;
 };
 
+risp_object *load_module(risp_env *env, const char *mod_name);
+
 risp_eobject *register_ephemeral_object(risp_env *env, risp_object *obj);
 void unregister_ephemeral_object(risp_env *env, risp_eobject *registered);
 
@@ -101,8 +103,9 @@ risp_object *collect_lexical_variables(risp_env *env);
 risp_object *intern_symbol(risp_env *env, const char *name);
 
 void var_frame_free_all(risp_env *env);
+bool init_std_module(risp_env *env);
 void env_init(risp_env *env, int argc, char **argv);
 void init_native_functions(risp_env *env);
-i32 read_and_eval(lexer *lex, risp_env *env);
+i32 read_and_eval(lexer *lex, risp_env *env, bool root);
 
 #endif

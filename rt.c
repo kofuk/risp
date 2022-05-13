@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include "parse.h"
 #include "primitive.h"
@@ -384,6 +385,55 @@ void var_frame_free_all(risp_env *env) {
         vars = prev;
     }
 }
+
+static int file_getc(lexer *lex) { return fgetc(lex->infile); }
+
+static int file_ungetc(int c, lexer *lex) { return ungetc(c, lex->infile); }
+
+risp_object *load_module(risp_env *env, const char *mod_name) {
+    usize len = strlen(mod_name);
+    char path[7 + len + 6];
+    memcpy(path, "../std/", 7);
+    memcpy(path + 7, mod_name, len);
+    memcpy(path + 7 + len, ".lisp", 5);
+    path[7 + len + 5] = '\0';
+
+    FILE *mod_file = fopen(path, "r");
+    if (mod_file == NULL) {
+        return Qnil;
+    }
+
+    lex_state state;
+    lex_state_init(&state);
+
+    lexer lex = {
+        .getc = &file_getc,
+        .ungetc = &file_ungetc,
+        .repl = false,
+        .infile = mod_file,
+        .in_name = path,
+        .state = &state,
+    };
+
+    for (;;) {
+        i32 status = read_and_eval(&lex, env, false);
+        if (get_error(env) != Qnil) {
+            fclose(mod_file);
+            token_free(lex.tk);
+            return Qnil;
+        }
+        if (status <= 0) {
+            break;
+        }
+    }
+
+    fclose(mod_file);
+    token_free(lex.tk);
+
+    return Qt;
+}
+
+bool init_std_module(risp_env *env) { return load_module(env, "std") == Qt ? true : false; }
 
 /**
  * Initialize a new Risp execution environment.
@@ -1523,7 +1573,7 @@ void repr_object(risp_env *env, risp_object *obj) {
  *
  * Note: This function can run GC.
  */
-i32 read_and_eval(lexer *lex, risp_env *env) {
+i32 read_and_eval(lexer *lex, risp_env *env, bool root) {
     risp_error err;
     risp_error_init(&err);
 
@@ -1546,10 +1596,12 @@ i32 read_and_eval(lexer *lex, risp_env *env) {
 
     risp_object *runtime_err = get_error(env);
     if (runtime_err != Qnil) {
-        fputs("Fatal error: ", stderr);
-        repr_object(env, runtime_err);
-        putchar('\n');
-        clear_error(env);
+        if (root) {
+            fputs("Fatal error: ", stderr);
+            repr_object(env, runtime_err);
+            putchar('\n');
+            clear_error(env);
+        }
 
         return lex->repl ? 1 : -1;
     }
@@ -1603,6 +1655,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
+    register_native_function(env, "load", RISP_FUNC(load));
     register_native_function(env, "let", RISP_FUNC(let));
     register_native_function(env, "macrop", RISP_FUNC(macrop));
     register_native_function(env, "make-symbol", RISP_FUNC(make_symbol));

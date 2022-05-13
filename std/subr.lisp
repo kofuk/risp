@@ -1,0 +1,1 @@
+(defun hoge () (print "hoge"))

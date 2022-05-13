@@ -105,6 +105,8 @@ int main(int argc, char **argv) {
         ++argv;
     }
 
+    int exit_code = 0;
+
     lex_state state;
     lex_state_init(&state);
     lex.state = &state;
@@ -112,11 +114,13 @@ int main(int argc, char **argv) {
     risp_env env;
     env_init(&env, argc, argv);
     init_native_functions(&env);
-
-    int exit_code = 0;
+    if (!init_std_module(&env)) {
+        fputs("Failed to load std module.\n", stderr);
+        goto clean;
+    }
 
     for (;;) {
-        i32 status = read_and_eval(&lex, &env);
+        i32 status = read_and_eval(&lex, &env, true);
 
         if (status <= 0) {
             exit_code = -status;
