@@ -52,8 +52,8 @@ typedef struct risp_vars {
     struct risp_vars *prev;
 } risp_vars;
 
-extern risp_object Qnil;
-extern risp_object Qt;
+extern risp_object *Qnil;
+extern risp_object *Qt;
 
 // risp_eobject is a wrapper for risp_object to avoid ephemeral objects to be freed and keep track
 // of them.

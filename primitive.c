@@ -11,9 +11,9 @@
  */
 static i64 list_length(risp_env *env, risp_object *list) {
     i64 result = 0;
-    for (risp_object *arg = list; arg != &Qnil; arg = arg->cdr) {
+    for (risp_object *arg = list; arg != Qnil; arg = arg->cdr) {
         if (arg->type != T_CONS) {
-            signal_error_s(env, "argument must be a list or string");
+            signal_error_s(env, "argument must be a list");
             return -1;
         }
 
@@ -23,7 +23,7 @@ static i64 list_length(risp_env *env, risp_object *list) {
 }
 
 static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool *spliced) {
-    if (arg == &Qnil || arg == &Qt) {
+    if (arg == Qnil || arg == Qt) {
         return arg;
     }
 
@@ -35,14 +35,14 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
                 arg = earg->o;
                 unregister_ephemeral_object(env, earg);
                 if (list_length(env, arg->cdr) != 1) {
-                    if (get_error(env) != &Qnil) {
+                    if (get_error(env) != Qnil) {
                         signal_error_s(env, "1 argument required");
                     }
                     return NULL;
                 }
 
                 risp_object *result = eval_exp(env, arg->cdr->car);
-                if (get_error(env) != &Qnil) {
+                if (get_error(env) != Qnil) {
                     return NULL;
                 }
                 return result;
@@ -60,14 +60,14 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
                 arg = earg->o;
                 unregister_ephemeral_object(env, earg);
                 if (list_length(env, arg->cdr) != 1) {
-                    if (get_error(env) != &Qnil) {
+                    if (get_error(env) != Qnil) {
                         signal_error_s(env, "1 argument required");
                     }
                     return NULL;
                 }
 
                 risp_object *elements = eval_exp(env, arg->cdr->car);
-                if (get_error(env) != &Qnil) {
+                if (get_error(env) != Qnil) {
                     return NULL;
                 }
 
@@ -85,10 +85,10 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
         risp_eobject *result = register_ephemeral_object(env, result_head);
         risp_eobject *result_prev = register_ephemeral_object(env, result_head);
         risp_eobject *cur = register_ephemeral_object(env, arg);
-        while (cur->o != &Qnil) {
+        while (cur->o != Qnil) {
             bool spliced = false;
             risp_object *element = handle_backquote_inner(env, cur->o->car, &spliced);
-            if (get_error(env) != &Qnil) {
+            if (get_error(env) != Qnil) {
                 unregister_ephemeral_object(env, cur);
                 unregister_ephemeral_object(env, result_prev);
                 unregister_ephemeral_object(env, result);
@@ -99,14 +99,14 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
                 result_prev->o->cdr = element;
 
                 risp_object *next = element;
-                while (next->type == T_CONS && next != &Qnil && next != &Qt && next->cdr != &Qnil) {
+                while (next->type == T_CONS && next->cdr != Qnil) {
                     next = next->cdr;
                 }
 
                 unregister_ephemeral_object(env, result_prev);
                 result_prev = register_ephemeral_object(env, next);
             } else {
-                if (result_prev->o == &Qnil || result_prev->o == &Qt || result_prev->o->type != T_CONS) {
+                if (result_prev->o == Qnil || result_prev->o == Qt || result_prev->o->type != T_CONS) {
                     unregister_ephemeral_object(env, cur);
                     unregister_ephemeral_object(env, result_prev);
                     unregister_ephemeral_object(env, result);
@@ -118,7 +118,7 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
 
                 risp_object *cons = alloc_object(env, T_CONS);
                 cons->car = eelement->o;
-                cons->cdr = &Qnil;
+                cons->cdr = Qnil;
                 result_prev->o->cdr = cons;
                 unregister_ephemeral_object(env, result_prev);
                 result_prev = register_ephemeral_object(env, cons);
@@ -126,7 +126,7 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
                 unregister_ephemeral_object(env, eelement);
             }
 
-            if (cur->o->cdr->type != T_CONS || cur->o->cdr == &Qt) {
+            if (cur->o->cdr->type != T_CONS) {
                 break;
             }
 
@@ -146,7 +146,7 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
 
 DEFUN(backquote) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
@@ -157,18 +157,18 @@ DEFUN(backquote) {
 
 DEFUN(car) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
     }
 
     risp_object *list = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    if (list == &Qnil || list == &Qt || list->type != T_CONS) {
+    if (list->type != T_CONS) {
         signal_error_s(env, "Argument is not cons");
         return NULL;
     }
@@ -178,18 +178,18 @@ DEFUN(car) {
 
 DEFUN(cdr) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
     }
 
     risp_object *list = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    if (list == &Qnil || list == &Qt || list->type != T_CONS) {
+    if (list->type != T_CONS) {
         signal_error_s(env, "Argument is not cons");
         return NULL;
     }
@@ -199,23 +199,23 @@ DEFUN(cdr) {
 
 DEFUN(consp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_CONS ? &Qt : &Qnil;
+    return val->type == T_CONS ? Qt : Qnil;
 }
 
 DEFUN(defmacro) {
     if (list_length(env, args) < 3) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "macro name and argument required");
         }
         return NULL;
@@ -225,13 +225,13 @@ DEFUN(defmacro) {
     risp_object *macro_arg = args->cdr->car;
     risp_object *macro_body = args->cdr->cdr;
 
-    if (macro_sym->type != T_SYMBOL) {
+    if (macro_sym->type != T_SYMBOL || macro_sym == Qnil || macro_sym == Qt) {
         signal_error_s(env, "macro name must be a symbol");
         return NULL;
     }
 
-    for (risp_object *a = macro_arg; a != &Qnil; a = a->cdr) {
-        if (a->car->type != T_SYMBOL) {
+    for (risp_object *a = macro_arg; a != Qnil; a = a->cdr) {
+        if (a->car->type != T_SYMBOL || a->car == Qnil || a->car == Qt) {
             signal_error_s(env, "macro must be a symbol");
             return NULL;
         }
@@ -258,7 +258,7 @@ DEFUN(defmacro) {
 
 DEFUN(defun) {
     if (list_length(env, args) < 3) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "function name and argument required");
         }
         return NULL;
@@ -268,13 +268,13 @@ DEFUN(defun) {
     risp_object *func_arg = args->cdr->car;
     risp_object *func_body = args->cdr->cdr;
 
-    if (func_sym->type != T_SYMBOL) {
+    if (func_sym->type != T_SYMBOL || func_sym == Qnil || func_sym == Qt) {
         signal_error_s(env, "function name must be a symbol");
         return NULL;
     }
 
-    for (risp_object *a = func_arg; a != &Qnil; a = a->cdr) {
-        if (a->car->type != T_SYMBOL) {
+    for (risp_object *a = func_arg; a != Qnil; a = a->cdr) {
+        if (a->car->type != T_SYMBOL || a->car == Qnil || a->car == Qt) {
             signal_error_s(env, "argument must be a symbol");
             return NULL;
         }
@@ -303,7 +303,7 @@ DEFUN(divide) {
     if (list_length(env, args) == 0) {
         signal_error_s(env, "1 or more arguments required");
         return NULL;
-    } else if (get_error(env) != &Qnil) {
+    } else if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -312,9 +312,9 @@ DEFUN(divide) {
     risp_eobject *cur = register_ephemeral_object(env, args);
     bool first = true;
 
-    while (cur->o != &Qnil) {
+    while (cur->o != Qnil) {
         risp_object *target = eval_exp(env, cur->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
         }
@@ -348,7 +348,7 @@ DEFUN(divide) {
 
 DEFUN(dolist) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "argument required");
         }
         return NULL;
@@ -356,14 +356,14 @@ DEFUN(dolist) {
 
     risp_object *arg = args->car;
     if (list_length(env, arg) < 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "illegal argument");
         }
         return NULL;
     }
 
     risp_object *var = arg->car;
-    if (var->type != T_SYMBOL) {
+    if (var->type != T_SYMBOL || var == Qnil || var == Qt) {
         signal_error_s(env, "argument var must be a symbol");
         return NULL;
     }
@@ -371,14 +371,14 @@ DEFUN(dolist) {
     risp_eobject *ebody = register_ephemeral_object(env, args->cdr);
 
     risp_object *list = eval_exp(env, arg->cdr->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, ebody);
         unregister_ephemeral_object(env, evar);
         return NULL;
     }
 
     list_length(env, list);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, ebody);
         unregister_ephemeral_object(env, evar);
         return NULL;
@@ -393,15 +393,15 @@ DEFUN(dolist) {
     unregister_ephemeral_object(env, evar);
 
     run_dolist_body(env, var, list, body);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, result);
         return NULL;
     }
 
-    risp_object *r = &Qnil;
-    if (result->o != &Qnil) {
+    risp_object *r = Qnil;
+    if (result->o != Qnil) {
         r = eval_exp(env, result->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, result);
             return NULL;
         }
@@ -414,7 +414,7 @@ DEFUN(dolist) {
 
 DEFUN(eq) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments expected");
         }
         return NULL;
@@ -423,7 +423,7 @@ DEFUN(eq) {
     risp_eobject *arg2 = register_ephemeral_object(env, args->cdr->car);
 
     risp_object *o1 = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, arg2);
         return NULL;
     }
@@ -432,7 +432,7 @@ DEFUN(eq) {
 
     risp_object *o2 = eval_exp(env, arg2->o);
     unregister_ephemeral_object(env, arg2);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, eo1);
         return NULL;
     }
@@ -441,15 +441,15 @@ DEFUN(eq) {
     unregister_ephemeral_object(env, eo1);
 
     if (o1->type == T_INT && o2->type == T_INT) {
-        return o1->integer == o2->integer ? &Qt : &Qnil;
+        return o1->integer == o2->integer ? Qt : Qnil;
     }
 
-    return o1 == o2 ? &Qt : &Qnil;
+    return o1 == o2 ? Qt : Qnil;
 }
 
 DEFUN(funcall) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "function name required");
         }
         return NULL;
@@ -457,7 +457,7 @@ DEFUN(funcall) {
 
     risp_eobject *rest = register_ephemeral_object(env, args->cdr);
     risp_object *func = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -514,23 +514,23 @@ DEFUN(funcall) {
 
 DEFUN(functionp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_FUNC ? &Qt : &Qnil;
+    return val->type == T_FUNC ? Qt : Qnil;
 }
 
 DEFUN(if) {
     if (list_length(env, args) < 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
@@ -541,19 +541,19 @@ DEFUN(if) {
     risp_eobject *rest = register_ephemeral_object(env, args->cdr->cdr);
 
     risp_object *cond_val = eval_exp(env, cond);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, rest);
         unregister_ephemeral_object(env, then);
         return NULL;
     }
 
-    if (cond_val != &Qnil) {
+    if (cond_val != Qnil) {
         unregister_ephemeral_object(env, rest);
 
         risp_object *exp = then->o;
         unregister_ephemeral_object(env, then);
         risp_object *r = eval_exp(env, exp);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             return NULL;
         }
         return r;
@@ -561,10 +561,10 @@ DEFUN(if) {
 
     unregister_ephemeral_object(env, then);
 
-    risp_object *result = &Qnil;
-    while (rest->o != &Qnil) {
+    risp_object *result = Qnil;
+    while (rest->o != Qnil) {
         result = eval_exp(env, rest->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, rest);
             return NULL;
         }
@@ -580,30 +580,30 @@ DEFUN(if) {
 
 DEFUN(integerp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_INT ? &Qt : &Qnil;
+    return val->type == T_INT ? Qt : Qnil;
 }
 
 DEFUN(intern) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "just 1 argument expected");
         }
         return NULL;
     }
 
     risp_object *name_obj = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -621,28 +621,28 @@ DEFUN(intern) {
 
 DEFUN(listp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
     list_length(env, val);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         clear_error(env);
-        return &Qnil;
+        return Qnil;
     }
-    return &Qt;
+    return Qt;
 }
 
 DEFUN(lambda) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "arglist requied");
         }
         return NULL;
@@ -678,7 +678,7 @@ DEFUN(lambda) {
 
 DEFUN(length) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "just 1 argument expected");
         }
         return NULL;
@@ -687,11 +687,11 @@ DEFUN(length) {
     i64 result = 0;
     risp_object *target = eval_exp(env, args->car);
 
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    if (target == &Qnil) {
+    if (target == Qnil) {
         result = 0;
     } else if (target->type == T_CONS) {
         result = list_length(env, target);
@@ -707,19 +707,19 @@ DEFUN(length) {
 
 DEFUN(let) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "variable list required");
         }
         return NULL;
     }
 
     list_length(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
     risp_object *result = run_with_local_vars(env, args->car, args->cdr);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
     return result;
@@ -727,7 +727,7 @@ DEFUN(let) {
 
 DEFUN(lt) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 or more argument required");
         }
         return NULL;
@@ -736,7 +736,7 @@ DEFUN(lt) {
     risp_eobject *rest = register_ephemeral_object(env, args->cdr);
 
     risp_object *first = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, rest);
         return NULL;
     }
@@ -748,9 +748,9 @@ DEFUN(lt) {
 
     i64 last = first->integer;
     bool ok = true;
-    while (rest->o != &Qnil) {
+    while (rest->o != Qnil) {
         risp_object *val = eval_exp(env, rest->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, rest);
             return NULL;
         }
@@ -773,35 +773,35 @@ DEFUN(lt) {
 
     unregister_ephemeral_object(env, rest);
 
-    return ok ? &Qt : &Qnil;
+    return ok ? Qt : Qnil;
 }
 
 DEFUN(macrop) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_MACRO ? &Qt : &Qnil;
+    return val->type == T_MACRO ? Qt : Qnil;
 }
 
 DEFUN(make_symbol) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "just 1 argument expected");
         }
         return NULL;
     }
 
     risp_object *name_obj = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -820,14 +820,14 @@ DEFUN(make_symbol) {
 
 DEFUN(minus) {
     i64 len = list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
     if (len == 1) {
         // negate mode
         risp_object *arg = eval_exp(env, args->car);
 
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             return NULL;
         }
 
@@ -851,9 +851,9 @@ DEFUN(minus) {
     risp_eobject *cur = register_ephemeral_object(env, args);
     bool first = true;
 
-    while (cur->o != &Qnil) {
+    while (cur->o != Qnil) {
         risp_object *target = eval_exp(env, cur->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
         }
@@ -888,7 +888,7 @@ DEFUN(minus) {
 
 DEFUN(multiply) {
     list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -896,9 +896,9 @@ DEFUN(multiply) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
 
-    while (cur->o != &Qnil) {
+    while (cur->o != Qnil) {
         risp_object *target = eval_exp(env, cur->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
         }
@@ -927,55 +927,55 @@ DEFUN(multiply) {
 
 DEFUN(native_function_p) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_NATIVE_FUNC ? &Qt : &Qnil;
+    return val->type == T_NATIVE_FUNC ? Qt : Qnil;
 }
 
 DEFUN(native_handle_p) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_NATIVE_HANDLE ? &Qt : &Qnil;
+    return val->type == T_NATIVE_HANDLE ? Qt : Qnil;
 }
 
 DEFUN(not ) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
     }
 
     risp_object *obj = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return obj == &Qnil ? &Qt : &Qnil;
+    return obj == Qnil ? Qt : Qnil;
 }
 
 DEFUN(nth) {
     risp_object *nth_cdr = RISP_FUNC(nthcdr)(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
     return nth_cdr->car;
@@ -983,7 +983,7 @@ DEFUN(nth) {
 
 DEFUN(nthcdr) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments required");
         }
         return NULL;
@@ -992,7 +992,7 @@ DEFUN(nthcdr) {
     risp_eobject *list_exp = register_ephemeral_object(env, args->cdr->car);
 
     risp_object *index = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, list_exp);
         return NULL;
     }
@@ -1007,12 +1007,12 @@ DEFUN(nthcdr) {
     risp_object *list_arg = list_exp->o;
     unregister_ephemeral_object(env, list_exp);
     risp_object *list = eval_exp(env, list_arg);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
     i64 len = list_length(env, list);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -1031,7 +1031,7 @@ DEFUN(nthcdr) {
 
 DEFUN(nthchar) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments required");
         }
         return NULL;
@@ -1040,7 +1040,7 @@ DEFUN(nthchar) {
     risp_eobject *str_exp = register_ephemeral_object(env, args->cdr->car);
 
     risp_object *index = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, str_exp);
         return NULL;
     }
@@ -1055,7 +1055,7 @@ DEFUN(nthchar) {
     risp_object *str_arg = str_exp->o;
     unregister_ephemeral_object(env, str_exp);
     risp_object *str = eval_exp(env, str_arg);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
     if (str->type != T_STRING) {
@@ -1080,7 +1080,7 @@ DEFUN(nthchar) {
 
 DEFUN(plus) {
     list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
@@ -1089,9 +1089,9 @@ DEFUN(plus) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
 
-    while (cur->o != &Qnil) {
+    while (cur->o != Qnil) {
         risp_object *target = eval_exp(env, cur->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, cur);
             unregister_ephemeral_object(env, result);
             return NULL;
@@ -1120,15 +1120,15 @@ DEFUN(plus) {
 
 DEFUN(print) {
     list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
     risp_eobject *cur = register_ephemeral_object(env, args);
 
-    while (cur->o != &Qnil) {
+    while (cur->o != Qnil) {
         risp_object *target = eval_exp(env, cur->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, cur);
             return NULL;
         }
@@ -1149,20 +1149,20 @@ DEFUN(print) {
 
     unregister_ephemeral_object(env, cur);
 
-    return &Qnil;
+    return Qnil;
 }
 
 DEFUN(progn) {
     list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    risp_object *result = &Qnil;
+    risp_object *result = Qnil;
     risp_eobject *body = register_ephemeral_object(env, args);
-    while (body->o != &Qnil) {
+    while (body->o != Qnil) {
         result = eval_exp(env, body->o->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, body);
             return NULL;
         }
@@ -1178,7 +1178,7 @@ DEFUN(progn) {
 
 DEFUN(quote) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
@@ -1189,7 +1189,7 @@ DEFUN(quote) {
 
 DEFUN(raise) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "1 argument required");
         }
         return NULL;
@@ -1200,7 +1200,7 @@ DEFUN(raise) {
 
 DEFUN(setcar) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments required");
         }
         return NULL;
@@ -1208,7 +1208,7 @@ DEFUN(setcar) {
 
     risp_eobject *e_val = register_ephemeral_object(env, args->cdr->car);
     risp_object *cell = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, e_val);
         return NULL;
     }
@@ -1225,7 +1225,7 @@ DEFUN(setcar) {
     unregister_ephemeral_object(env, e_val);
 
     val = eval_exp(env, val);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, ecell);
         return NULL;
     }
@@ -1238,7 +1238,7 @@ DEFUN(setcar) {
 
 DEFUN(setcdr) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments required");
         }
         return NULL;
@@ -1246,7 +1246,7 @@ DEFUN(setcdr) {
 
     risp_eobject *e_val = register_ephemeral_object(env, args->cdr->car);
     risp_object *cell = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, e_val);
         return NULL;
     }
@@ -1263,7 +1263,7 @@ DEFUN(setcdr) {
     unregister_ephemeral_object(env, e_val);
 
     val = eval_exp(env, val);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, ecell);
         return NULL;
     }
@@ -1276,7 +1276,7 @@ DEFUN(setcdr) {
 
 DEFUN(setq) {
     i64 len = list_length(env, args);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
     if (len % 2 != 0) {
@@ -1286,8 +1286,8 @@ DEFUN(setq) {
 
     risp_eobject *cur = register_ephemeral_object(env, args);
     risp_eobject *last = register_ephemeral_object(env, NULL);
-    while (cur->o != &Qnil) {
-        if (cur->o->car->type != T_SYMBOL) {
+    while (cur->o != Qnil) {
+        if (cur->o->car->type != T_SYMBOL || cur->o->car == Qnil || cur->o->car == Qt) {
             unregister_ephemeral_object(env, cur);
 
             signal_error_s(env, "variable must be symbol");
@@ -1295,7 +1295,7 @@ DEFUN(setq) {
         }
         risp_eobject *sym = register_ephemeral_object(env, cur->o->car);
         risp_object *val = eval_exp(env, cur->o->cdr->car);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, sym);
             unregister_ephemeral_object(env, last);
             unregister_ephemeral_object(env, cur);
@@ -1322,7 +1322,7 @@ DEFUN(setq) {
 
 DEFUN(stringeq) {
     if (list_length(env, args) != 2) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "2 arguments expected");
         }
         return NULL;
@@ -1331,7 +1331,7 @@ DEFUN(stringeq) {
     risp_eobject *arg2 = register_ephemeral_object(env, args->cdr->car);
 
     risp_object *o1 = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, arg2);
         return NULL;
     }
@@ -1340,7 +1340,7 @@ DEFUN(stringeq) {
 
     risp_object *o2 = eval_exp(env, arg2->o);
     unregister_ephemeral_object(env, arg2);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         unregister_ephemeral_object(env, eo1);
         return NULL;
     }
@@ -1354,47 +1354,47 @@ DEFUN(stringeq) {
     }
 
     if (o1->str_len != o2->str_len) {
-        return &Qnil;
+        return Qnil;
     }
 
-    return !memcmp(o1->str_data, o2->str_data, o1->str_len) ? &Qt : &Qnil;
+    return !memcmp(o1->str_data, o2->str_data, o1->str_len) ? Qt : Qnil;
 }
 
 DEFUN(stringp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_STRING ? &Qt : &Qnil;
+    return val->type == T_STRING ? Qt : Qnil;
 }
 
 DEFUN(symbolp) {
     if (list_length(env, args) != 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "wrong number of arguments");
         }
         return NULL;
     }
 
     risp_object *val = eval_exp(env, args->car);
-    if (get_error(env) != &Qnil) {
+    if (get_error(env) != Qnil) {
         return NULL;
     }
 
-    return val->type == T_SYMBOL ? &Qt : &Qnil;
+    return val->type == T_SYMBOL ? Qt : Qnil;
 }
 
 DEFUN(while) {
     if (list_length(env, args) < 1) {
-        if (get_error(env) == &Qnil) {
+        if (get_error(env) == Qnil) {
             signal_error_s(env, "condition required");
         }
         return NULL;
@@ -1405,20 +1405,20 @@ DEFUN(while) {
 
     for (;;) {
         risp_object *cond_result = eval_exp(env, cond->o);
-        if (get_error(env) != &Qnil) {
+        if (get_error(env) != Qnil) {
             unregister_ephemeral_object(env, body);
             unregister_ephemeral_object(env, cond);
             return NULL;
         }
 
-        if (cond_result == &Qnil) {
+        if (cond_result == Qnil) {
             break;
         }
 
         risp_eobject *cur_body = register_ephemeral_object(env, body->o);
-        while (cur_body->o != &Qnil) {
+        while (cur_body->o != Qnil) {
             eval_exp(env, cur_body->o->car);
-            if (get_error(env) != &Qnil) {
+            if (get_error(env) != Qnil) {
                 unregister_ephemeral_object(env, cur_body);
                 unregister_ephemeral_object(env, body);
                 unregister_ephemeral_object(env, cond);
@@ -1434,5 +1434,5 @@ DEFUN(while) {
     unregister_ephemeral_object(env, body);
     unregister_ephemeral_object(env, cond);
 
-    return &Qnil;
+    return Qnil;
 }
