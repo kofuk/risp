@@ -9,6 +9,8 @@
 DEFUN(backquote);
 DEFUN(car);
 DEFUN(cdr);
+DEFUN(concat);
+DEFUN(cond);
 DEFUN(consp);
 DEFUN(defmacro);
 DEFUN(defun);

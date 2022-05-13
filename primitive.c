@@ -197,6 +197,106 @@ DEFUN(cdr) {
     return list->cdr;
 }
 
+DEFUN(concat) {
+    list_length(env, args);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+    risp_eobject *result = register_ephemeral_object(env, alloc_str_like(env, T_STRING, 0));
+    while (eargs->o != Qnil) {
+        risp_object *str = eval_exp(env, eargs->o->car);
+        if (get_error(env) != Qnil) {
+            unregister_ephemeral_object(env, result);
+            unregister_ephemeral_object(env, eargs);
+            return NULL;
+        }
+
+        if (str->type != T_STRING) {
+            unregister_ephemeral_object(env, result);
+            unregister_ephemeral_object(env, eargs);
+            signal_error_s(env, "argument must be string");
+            return NULL;
+        }
+
+        risp_eobject *cur = register_ephemeral_object(env, str);
+
+        risp_object *new_obj = alloc_str_like(env, T_STRING, result->o->str_len + cur->o->str_len);
+        memcpy(new_obj->str_data, result->o->str_data, result->o->str_len);
+        memcpy(new_obj->str_data + result->o->str_len, cur->o->str_data, cur->o->str_len);
+
+        unregister_ephemeral_object(env, cur);
+        unregister_ephemeral_object(env, result);
+        result = register_ephemeral_object(env, new_obj);
+
+        risp_object *next = eargs->o->cdr;
+        unregister_ephemeral_object(env, eargs);
+        eargs = register_ephemeral_object(env, next);
+    }
+
+    unregister_ephemeral_object(env, eargs);
+
+    risp_object *r = result->o;
+    unregister_ephemeral_object(env, result);
+    return r;
+}
+
+DEFUN(cond) {
+    list_length(env, args);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    risp_eobject *clause = register_ephemeral_object(env, args);
+    while (clause->o != Qnil) {
+        if (clause->o->car->type != T_CONS) {
+            unregister_ephemeral_object(env, clause);
+            signal_error_s(env, "caluses must be lists");
+            return NULL;
+        }
+        risp_object *cond = eval_exp(env, clause->o->car->car);
+        if (get_error(env) != Qnil) {
+            unregister_ephemeral_object(env, clause);
+            return NULL;
+        }
+
+        if (cond != Qnil) {
+            break;
+        }
+
+        risp_object *next = clause->o->cdr;
+        unregister_ephemeral_object(env, clause);
+        clause = register_ephemeral_object(env, next);
+    }
+
+    if (clause->o == Qnil) {
+        unregister_ephemeral_object(env, clause);
+        return Qnil;
+    }
+
+    risp_object *body = clause->o->car->cdr;
+    unregister_ephemeral_object(env, clause);
+    clause = register_ephemeral_object(env, body);
+
+    risp_object *result = Qnil;
+    while (clause->o->type == T_CONS && clause->o != Qnil) {
+        result = eval_exp(env, clause->o->car);
+
+        if (get_error(env) != Qnil) {
+            unregister_ephemeral_object(env, clause);
+            return NULL;
+        }
+
+        risp_object *next = clause->o->cdr;
+        unregister_ephemeral_object(env, clause);
+        clause = register_ephemeral_object(env, next);
+    }
+    unregister_ephemeral_object(env, clause);
+
+    return result;
+}
+
 DEFUN(consp) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == Qnil) {

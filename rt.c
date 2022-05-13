@@ -1617,6 +1617,8 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
+    register_native_function(env, "concat", RISP_FUNC(concat));
+    register_native_function(env, "cond", RISP_FUNC(cond));
     register_native_function(env, "consp", RISP_FUNC(consp));
     register_native_function(env, "defmacro", RISP_FUNC(defmacro));
     register_native_function(env, "defun", RISP_FUNC(defun));
