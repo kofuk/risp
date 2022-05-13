@@ -865,99 +865,61 @@ risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *ar
     return result;
 }
 
-/**
- * Runs body with a element of `list' stored in local variable `var'.
- *
- * Note: This function can run GC.
- */
-void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_object *body) {
-    if (var->type != T_SYMBOL) {
-        signal_error_s(env, "`var' must be a symbol");
-        return;
-    }
-
-    push_var_frame(env, make_var_frame_inner(env));
-
-    risp_eobject *elist = register_ephemeral_object(env, list);
-    risp_eobject *ebody = register_ephemeral_object(env, body);
-
-    while (elist->o != Qnil) {
-        make_local_variable(env, var, elist->o->car, false);
-
-        risp_eobject *body_cur = register_ephemeral_object(env, ebody->o);
-        while (body_cur->o != Qnil) {
-            eval_exp(env, body_cur->o->car);
-            if (get_error(env) != Qnil) {
-                unregister_ephemeral_object(env, body_cur);
-                unregister_ephemeral_object(env, ebody);
-                unregister_ephemeral_object(env, elist);
-                pop_var_frame(env);
-                return;
-            }
-
-            risp_object *next = body_cur->o->cdr;
-            unregister_ephemeral_object(env, body_cur);
-            body_cur = register_ephemeral_object(env, next);
-        }
-
-        unregister_ephemeral_object(env, body_cur);
-
-        risp_object *next = elist->o->cdr;
-        unregister_ephemeral_object(env, elist);
-        elist = register_ephemeral_object(env, next);
-    }
-
-    unregister_ephemeral_object(env, ebody);
-    unregister_ephemeral_object(env, elist);
-
-    pop_var_frame(env);
-}
-
 static risp_object *expand_macro_and_run(risp_env *env, risp_object *macro, risp_object *args) {
     push_var_frame(env, make_var_frame_isolated(env));
 
     risp_eobject *earglist = register_ephemeral_object(env, macro->macro.arglist);
     risp_eobject *eargs = register_ephemeral_object(env, args);
+    risp_object *rest_sym = intern_symbol(env, "&rest");
+    bool is_rest = false;
     for (;;) {
-        if ((earglist->o != Qnil && eargs->o == Qnil) || (earglist->o == Qnil && eargs->o != Qnil)) {
+        if (earglist->o == Qnil) {
             unregister_ephemeral_object(env, earglist);
             unregister_ephemeral_object(env, eargs);
-
-            pop_var_frame(env);
-            signal_error_s(env, "wrong number of arguments");
-            return NULL;
+            if (eargs->o == Qnil) {
+                break;
+            } else {
+                pop_var_frame(env);
+                signal_error_s(env, "wrong number of arguments");
+            }
         }
-        if (earglist->o == Qnil && eargs->o == Qnil) {
-            break;
-        }
 
-        if (earglist->o == Qt || earglist->o->type != T_CONS || earglist->o->car->type != T_SYMBOL) {
+        if (earglist->o->type != T_CONS) {
             unregister_ephemeral_object(env, earglist);
             unregister_ephemeral_object(env, eargs);
 
             pop_var_frame(env);
             signal_error_s(env, "invalid arglist");
-            return NULL;
         }
 
-        if (eargs->o == Qt || eargs->o->type != T_CONS) {
+        if (earglist->o->car == rest_sym) {
+            // &rest
+            is_rest = true;
+            risp_object *next_al = earglist->o->cdr;
             unregister_ephemeral_object(env, earglist);
-            unregister_ephemeral_object(env, eargs);
-
-            pop_var_frame(env);
-            signal_error_s(env, "invalid macro call");
-            return NULL;
+            earglist = register_ephemeral_object(env, next_al);
+            continue;
         }
 
-        make_local_variable(env, earglist->o->car, args->car, false);
+        if (is_rest) {
+            make_local_variable(env, earglist->o->car, eargs->o, false);
+        } else {
+            if (eargs->o == Qnil) {
+                unregister_ephemeral_object(env, earglist);
+                unregister_ephemeral_object(env, eargs);
+                pop_var_frame(env);
+                signal_error_s(env, "wrong number of arguments");
+            }
 
-        if (earglist->o->cdr->type != T_CONS || eargs->o->cdr->type != T_CONS) {
-            unregister_ephemeral_object(env, earglist);
-            unregister_ephemeral_object(env, eargs);
+            if (eargs->o->type != T_CONS) {
+                unregister_ephemeral_object(env, earglist);
+                unregister_ephemeral_object(env, eargs);
 
-            pop_var_frame(env);
-            signal_error_s(env, "invalid macro call");
-            return NULL;
+                pop_var_frame(env);
+                signal_error_s(env, "invalid arglist");
+            }
+
+            make_local_variable(env, earglist->o->car, eargs->o->car, false);
         }
 
         risp_object *next_al = earglist->o->cdr;
@@ -965,6 +927,15 @@ static risp_object *expand_macro_and_run(risp_env *env, risp_object *macro, risp
 
         unregister_ephemeral_object(env, earglist);
         unregister_ephemeral_object(env, eargs);
+
+        if (is_rest) {
+            if (next_al != Qnil) {
+                pop_var_frame(env);
+                signal_error_s(env, "cannot have multiple rest argument");
+                return NULL;
+            }
+            break;
+        }
 
         earglist = register_ephemeral_object(env, next_al);
         eargs = register_ephemeral_object(env, next_a);
@@ -1645,7 +1616,6 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "consp", RISP_FUNC(consp));
     register_native_function(env, "defmacro", RISP_FUNC(defmacro));
     register_native_function(env, "defun", RISP_FUNC(defun));
-    register_native_function(env, "dolist", RISP_FUNC(dolist));
     register_native_function(env, "eq", RISP_FUNC(eq));
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
@@ -1655,6 +1625,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "intern", RISP_FUNC(intern));
     register_native_function(env, "lambda", RISP_FUNC(lambda));
     register_native_function(env, "length", RISP_FUNC(length));
+    register_native_function(env, "listp", RISP_FUNC(listp));
     register_native_function(env, "load", RISP_FUNC(load));
     register_native_function(env, "let", RISP_FUNC(let));
     register_native_function(env, "macrop", RISP_FUNC(macrop));

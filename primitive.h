@@ -13,7 +13,6 @@ DEFUN(consp);
 DEFUN(defmacro);
 DEFUN(defun);
 DEFUN(divide);
-DEFUN(dolist);
 DEFUN(eq);
 DEFUN(funcall);
 DEFUN(functionp);

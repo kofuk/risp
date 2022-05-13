@@ -86,7 +86,6 @@ void clear_error(risp_env *env);
 risp_object *eval_exp(risp_env *env, risp_object *exp);
 risp_object *call_risp_function(risp_env *env, risp_object *func, risp_object *args);
 risp_object *call_risp_closure(risp_env *env, risp_object *func, risp_object *args);
-void run_dolist_body(risp_env *env, risp_object *var, risp_object *list, risp_object *body);
 risp_object *run_with_local_vars(risp_env *env, risp_object *vars, risp_object *body);
 
 void repr_object(risp_env *env, risp_object *obj);
