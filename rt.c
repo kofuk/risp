@@ -1609,7 +1609,11 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "-", RISP_FUNC(minus));
     register_native_function(env, "*", RISP_FUNC(multiply));
     register_native_function(env, "/", RISP_FUNC(divide));
+    register_native_function(env, "=", RISP_FUNC(eq_num));
+    register_native_function(env, ">", RISP_FUNC(gt));
+    register_native_function(env, ">=", RISP_FUNC(ge));
     register_native_function(env, "<", RISP_FUNC(lt));
+    register_native_function(env, "<=", RISP_FUNC(le));
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
