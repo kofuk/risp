@@ -381,6 +381,17 @@ DEFUN(eq) {
     return o1 == o2 ? Qt : Qnil;
 }
 
+DEFUN(error) {
+    if (list_length(env, args) != 1) {
+        if (get_error(env) == Qnil) {
+            signal_error_s(env, "1 argument required");
+        }
+        return NULL;
+    }
+    signal_error(env, args->car);
+    return NULL;
+}
+
 DEFUN(funcall) {
     if (list_length(env, args) < 1) {
         if (get_error(env) == Qnil) {
@@ -1149,17 +1160,6 @@ DEFUN(quote) {
     }
 
     return args->car;
-}
-
-DEFUN(raise) {
-    if (list_length(env, args) != 1) {
-        if (get_error(env) == Qnil) {
-            signal_error_s(env, "1 argument required");
-        }
-        return NULL;
-    }
-    signal_error(env, args->car);
-    return NULL;
 }
 
 DEFUN(setcar) {

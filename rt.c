@@ -1617,6 +1617,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "defmacro", RISP_FUNC(defmacro));
     register_native_function(env, "defun", RISP_FUNC(defun));
     register_native_function(env, "eq", RISP_FUNC(eq));
+    register_native_function(env, "error", RISP_FUNC(error));
     register_native_function(env, "funcall", RISP_FUNC(funcall));
     register_native_function(env, "function", RISP_FUNC(quote));
     register_native_function(env, "functionp", RISP_FUNC(functionp));
@@ -1638,7 +1639,6 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "progn", RISP_FUNC(progn));
     register_native_function(env, "quote", RISP_FUNC(quote));
-    register_native_function(env, "raise", RISP_FUNC(raise));
     register_native_function(env, "setcar", RISP_FUNC(setcar));
     register_native_function(env, "setcdr", RISP_FUNC(setcdr));
     register_native_function(env, "setq", RISP_FUNC(setq));
