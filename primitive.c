@@ -98,7 +98,7 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
             if (spliced) {
                 result_prev->o->cdr = element;
 
-                risp_object *next = element;
+                risp_object *next = result_prev->o;
                 while (next->type == T_CONS && next->cdr != Qnil) {
                     next = next->cdr;
                 }
