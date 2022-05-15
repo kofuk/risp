@@ -6,6 +6,7 @@
 #define DEFUN(name) risp_object *RISP_DEFUN_##name(risp_env *env, risp_object *args)
 #define RISP_FUNC(name) RISP_DEFUN_##name
 
+DEFUN(and);
 DEFUN(backquote);
 DEFUN(car);
 DEFUN(cdr);
@@ -42,6 +43,7 @@ DEFUN(not );
 DEFUN(nth);
 DEFUN(nthcdr);
 DEFUN(nthchar);
+DEFUN(or);
 DEFUN(plus);
 DEFUN(print);
 DEFUN(progn);

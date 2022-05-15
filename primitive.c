@@ -144,6 +144,38 @@ static risp_object *handle_backquote_inner(risp_env *env, risp_object *arg, bool
     return arg;
 }
 
+DEFUN(and) {
+    list_length(env, args);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    risp_object *result = Qt;
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+
+    while (eargs->o != Qnil) {
+        risp_object *cond = eval_exp(env, eargs->o->car);
+        if (get_error(env) != Qnil) {
+            unregister_ephemeral_object(env, eargs);
+            return NULL;
+        }
+
+        if (cond == Qnil) {
+            result = Qnil;
+            goto finish;
+        }
+        result = cond;
+
+        risp_object *next = eargs->o->cdr;
+        unregister_ephemeral_object(env, eargs);
+        eargs = register_ephemeral_object(env, next);
+    }
+
+finish:
+    unregister_ephemeral_object(env, eargs);
+    return result;
+}
+
 DEFUN(backquote) {
     if (list_length(env, args) != 1) {
         if (get_error(env) == Qnil) {
@@ -1355,6 +1387,37 @@ DEFUN(nthchar) {
     risp_object *r = alloc_object(env, T_INT);
     r->integer = chr;
     return r;
+}
+
+DEFUN(or) {
+    list_length(env, args);
+    if (get_error(env) != Qnil) {
+        return NULL;
+    }
+
+    risp_object *result = Qnil;
+    risp_eobject *eargs = register_ephemeral_object(env, args);
+
+    while (eargs->o != Qnil) {
+        risp_object *cond = eval_exp(env, eargs->o->car);
+        if (get_error(env) != Qnil) {
+            unregister_ephemeral_object(env, eargs);
+            return NULL;
+        }
+
+        if (cond != Qnil) {
+            result = cond;
+            goto finish;
+        }
+
+        risp_object *next = eargs->o->cdr;
+        unregister_ephemeral_object(env, eargs);
+        eargs = register_ephemeral_object(env, next);
+    }
+
+finish:
+    unregister_ephemeral_object(env, eargs);
+    return result;
 }
 
 DEFUN(plus) {

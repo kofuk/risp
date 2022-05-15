@@ -1614,6 +1614,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, ">=", RISP_FUNC(ge));
     register_native_function(env, "<", RISP_FUNC(lt));
     register_native_function(env, "<=", RISP_FUNC(le));
+    register_native_function(env, "and", RISP_FUNC(and));
     register_native_function(env, "backquote", RISP_FUNC(backquote));
     register_native_function(env, "car", RISP_FUNC(car));
     register_native_function(env, "cdr", RISP_FUNC(cdr));
@@ -1642,6 +1643,7 @@ void init_native_functions(risp_env *env) {
     register_native_function(env, "nthcdr", RISP_FUNC(nthcdr));
     register_native_function(env, "nthchar", RISP_FUNC(nthchar));
     register_native_function(env, "not", RISP_FUNC(not ));
+    register_native_function(env, "or", RISP_FUNC(or));
     register_native_function(env, "print", RISP_FUNC(print));
     register_native_function(env, "progn", RISP_FUNC(progn));
     register_native_function(env, "quote", RISP_FUNC(quote));
