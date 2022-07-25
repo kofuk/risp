@@ -11,13 +11,13 @@
 
 #define FLAG_ALWAYS_GC (1)
 
-static risp_object internal_object_nil = {
+static risp_object risp_nil = {
     .type = T_SYMBOL,
     .size = sizeof(risp_object),
     .str_len = 0,
 };
 
-static risp_object internal_object_t = {
+static risp_object risp_t = {
     .type = T_SYMBOL,
     .size = sizeof(risp_object),
     .str_len = 0,
@@ -26,12 +26,12 @@ static risp_object internal_object_t = {
 /**
  * Value represents `nil' in the Risp world.
  */
-risp_object *Qnil = &internal_object_nil;
+risp_object *Qnil = &risp_nil;
 
 /**
  * Value represents `t' in the Risp world.
  */
-risp_object *Qt = &internal_object_t;
+risp_object *Qt = &risp_t;
 
 /**
  * Copy `old_obj' to `free_ptr' and sets `forwarding' pointer.
@@ -43,13 +43,78 @@ static inline usize copy_object(risp_object *free_ptr, risp_object *old_obj) {
     return old_obj->size;
 }
 
+static void verify_heap(const void *h, usize len) {
+    usize obj_count = 0;
+
+#define VERIFY(obj) do {                                                \
+        if ((obj) == Qnil || (obj) == Qt ||                             \
+            ((usize)h <= (usize)(obj) && (usize)(obj) < (usize)h + len)) { \
+            ++obj_count;                                                \
+            printf("verifying heap: %zu...\r", obj_count);              \
+        } else {                                                        \
+            puts("heap verification failed");                           \
+            abort();                                                    \
+        }                                                               \
+    } while (0);
+
+    for (usize d = 0; d < len;) {
+        const risp_object *o = (const void *)((const char *)h + d);
+        switch (o->type) {
+        case T_CONS:
+            if (o->car != NULL) {
+                VERIFY(o->car);
+            }
+            if (o->cdr != NULL) {
+                VERIFY(o->cdr);
+            }
+            break;
+
+        case T_STRING:
+        case T_SYMBOL:
+        case T_KWSYMBOL:
+        case T_INT:
+            break;
+
+        case T_FUNC:
+            if (o->func.body != NULL) {
+                VERIFY(o->func.body);
+            }
+            if (o->func.arglist != NULL) {
+                VERIFY(o->func.arglist);
+            }
+            break;
+
+        case T_MACRO:
+            if (o->macro.body != NULL) {
+                VERIFY(o->macro.body);
+            }
+            if (o->macro.arglist != NULL) {
+                VERIFY(o->macro.arglist);
+            }
+            break;
+
+        case T_NATIVE_FUNC:
+        case T_NATIVE_HANDLE:
+            break;
+        }
+
+        d += o->size;
+    }
+
+#undef VERIFY
+
+    if (obj_count != 0) {
+        putchar('\n');
+    }
+}
+
 /**
  * Runs GC.
  * You must assume that all objects are invalid after running GC.
  * To keep track of the object through the GC, you can `register_ephemeral_object'.
  */
 static void run_gc(risp_env *env) {
-    void *new_heap = malloc(env->heap_cap);
+    void *new_heap = aligned_alloc(sizeof(void *), env->heap_cap);
     usize new_len = 0;
     risp_object *free_ptr = new_heap;
 
@@ -105,7 +170,7 @@ static void run_gc(risp_env *env) {
     while (scan_ptr < free_ptr) {
         switch (scan_ptr->type) {
         case T_CONS:
-            if (scan_ptr->car != Qnil && scan_ptr->car != Qt) {
+            if (scan_ptr->car != NULL && scan_ptr->car != Qnil && scan_ptr->car != Qt) {
                 if (scan_ptr->car->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->car);
                     scan_ptr->car = free_ptr;
@@ -114,7 +179,7 @@ static void run_gc(risp_env *env) {
                     scan_ptr->car = scan_ptr->car->forwarding;
                 }
             }
-            if (scan_ptr->cdr != Qnil && scan_ptr->cdr != Qt) {
+            if (scan_ptr->cdr != NULL && scan_ptr->cdr != Qnil && scan_ptr->cdr != Qt) {
                 if (scan_ptr->cdr->forwarding == NULL) {
                     new_len += copy_object(free_ptr, scan_ptr->cdr);
                     scan_ptr->cdr = free_ptr;
@@ -174,11 +239,19 @@ static void run_gc(risp_env *env) {
         case T_NATIVE_FUNC:
         case T_NATIVE_HANDLE:
             break;
+
+        default:
+            assert(false);
         }
+
+        scan_ptr = (risp_object *)((char *)scan_ptr + scan_ptr->size);
     }
 
     memset(env->heap, 0, env->heap_len);
     free(env->heap);
+
+    verify_heap(new_heap, new_len);
+
     env->heap = new_heap;
     env->heap_len = new_len;
 }
@@ -303,7 +376,8 @@ risp_object *alloc_object(risp_env *env, risp_type type) {
     risp_object *r = (void *)((char *)env->heap + env->heap_len);
     r->type = type;
     r->size = size;
-    r->forwarding = NULL;
+    memset((char *) r + offsetof(risp_object, forwarding), 0,
+           size - (offsetof(risp_object, forwarding)));
     env->heap_len += size;
     return r;
 }
@@ -1523,10 +1597,10 @@ void repr_object(risp_env *env, risp_object *obj) {
 
     case T_NATIVE_FUNC:
         printf("<native_func@%p>", ((union {
-                                        void *p;
-                                        risp_native_func func;
-                                    } *)&obj->native_func)
-                                       ->p);
+            void *p;
+            risp_native_func func;
+        } *)&obj->native_func)
+            ->p);
         break;
 
     case T_NATIVE_HANDLE:
@@ -1591,8 +1665,11 @@ i32 read_and_eval(lexer *lex, risp_env *env, bool root) {
  * Note: This function can run GC.
  */
 static inline void register_native_function(risp_env *env, const char *name, risp_native_func func) {
-    risp_object *func_var = alloc_object(env, T_NATIVE_FUNC);
+    risp_eobject *efunc_var = register_ephemeral_object(env, alloc_object(env, T_NATIVE_FUNC));
     risp_object *sym = intern_symbol(env, name);
+
+    risp_object *func_var = efunc_var->o;
+    unregister_ephemeral_object(env, efunc_var);
 
     func_var->native_func = func;
 

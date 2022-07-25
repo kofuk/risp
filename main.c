@@ -22,7 +22,7 @@ static int file_read_char(lexer *lex) { return fgetc(lex->infile); }
 static int file_unread_char(int c, lexer *lex) { return ungetc(c, lex->infile); }
 
 #ifdef HAVE_READLINE
-static int readline_getc(lexer *lex) {
+static int readline_read_char(lexer *lex) {
     if (lex->rl_unget >= 0) {
         int c = lex->rl_unget;
         lex->rl_unget = -1;
@@ -53,7 +53,7 @@ static int readline_getc(lexer *lex) {
     return c;
 }
 
-static int readline_ungetc(int c, lexer *lex) {
+static int readline_unread_char(int c, lexer *lex) {
     lex->rl_unget = c;
     return c;
 }
@@ -75,8 +75,8 @@ int main(int argc, char **argv) {
         lex.in_name = "<stdin>";
 #ifdef HAVE_READLINE
         if (isatty(STDIN_FILENO)) {
-            lex.getc = &readline_getc;
-            lex.ungetc = &readline_ungetc;
+            lex.read_char = &readline_read_char;
+            lex.unread_char = &readline_unread_char;
             lex.repl = true;
         } else {
 #endif
