@@ -17,9 +17,9 @@
 #include "risp.h"
 #include "rt.h"
 
-static int file_getc(lexer *lex) { return fgetc(lex->infile); }
+static int file_read_char(lexer *lex) { return fgetc(lex->infile); }
 
-static int file_ungetc(int c, lexer *lex) { return ungetc(c, lex->infile); }
+static int file_unread_char(int c, lexer *lex) { return ungetc(c, lex->infile); }
 
 #ifdef HAVE_READLINE
 static int readline_getc(lexer *lex) {
@@ -81,8 +81,8 @@ int main(int argc, char **argv) {
         } else {
 #endif
             lex.infile = stdin;
-            lex.getc = &file_getc;
-            lex.ungetc = &file_ungetc;
+            lex.read_char = &file_read_char;
+            lex.unread_char = &file_unread_char;
 #ifdef HAVE_READLINE
         }
 #endif
@@ -98,8 +98,8 @@ int main(int argc, char **argv) {
 
         lex.in_name = argv[1];
         lex.infile = infile;
-        lex.getc = &file_getc;
-        lex.ungetc = &file_ungetc;
+        lex.read_char = &file_read_char;
+        lex.unread_char = &file_unread_char;
 
         --argc;
         ++argv;

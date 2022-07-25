@@ -44,8 +44,8 @@ typedef struct lexer {
     lex_state *state;
     token *tk;
 
-    int (*getc)(struct lexer *);
-    int (*ungetc)(int, struct lexer *);
+    int (*read_char)(struct lexer *);
+    int (*unread_char)(int, struct lexer *);
 #ifdef HAVE_READLINE
     char *rl_prompt;
     char *rl_line;

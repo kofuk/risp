@@ -32,7 +32,7 @@ token *get_token(lexer *lex, risp_error *err) {
     int c;
     bool inside_comment = false;
     for (;;) {
-        c = lex->getc(lex);
+        c = lex->read_char(lex);
         if (c == EOF) {
             return NULL;
         }
@@ -78,13 +78,13 @@ token *get_token(lexer *lex, risp_error *err) {
 
     case ',': {
         bool is_unquote;
-        c = lex->getc(lex);
+        c = lex->read_char(lex);
         if (c == EOF) {
             is_unquote = true;
         } else if (c == '@') {
             is_unquote = false;
         } else {
-            lex->ungetc(c, lex);
+            lex->unread_char(c, lex);
             is_unquote = true;
         }
 
@@ -96,7 +96,7 @@ token *get_token(lexer *lex, risp_error *err) {
         break;
     }
     case '#':
-        c = lex->getc(lex);
+        c = lex->read_char(lex);
         if (c == EOF) {
             free(result);
 
@@ -138,14 +138,14 @@ token *get_token(lexer *lex, risp_error *err) {
 
         char first_char = c;
 
-        c = lex->getc(lex);
+        c = lex->read_char(lex);
         if (first_char == '-') {
             if (c == EOF) {
                 free(text);
                 goto scan_as_sym;
             } else if (!isdigit(c)) {
                 free(text);
-                lex->ungetc(c, lex);
+                lex->unread_char(c, lex);
                 c = '-';
                 goto scan_as_sym;
             }
@@ -154,18 +154,18 @@ token *get_token(lexer *lex, risp_error *err) {
                 text[1] = c;
                 len++;
             } else {
-                lex->ungetc(c, lex);
+                lex->unread_char(c, lex);
             }
         }
 
         for (;;) {
-            c = lex->getc(lex);
+            c = lex->read_char(lex);
             if (c == EOF) {
                 break;
             }
 
             if (!isdigit(c)) {
-                lex->ungetc(c, lex);
+                lex->unread_char(c, lex);
                 break;
             }
 
@@ -190,7 +190,7 @@ token *get_token(lexer *lex, risp_error *err) {
         usize cap = 4;
         char *text = malloc(sizeof(char) * cap);
         for (;;) {
-            c = lex->getc(lex);
+            c = lex->read_char(lex);
             if (c == EOF) {
                 free(result);
                 free(text);
@@ -232,12 +232,12 @@ token *get_token(lexer *lex, risp_error *err) {
         char *text = malloc(sizeof(char) * cap);
         text[0] = c;
         for (;;) {
-            c = lex->getc(lex);
+            c = lex->read_char(lex);
             if (c == EOF) {
                 break;
             }
             if (!(isalnum(c) || strchr("+-*/=<>:$@", c))) {
-                lex->ungetc(c, lex);
+                lex->unread_char(c, lex);
                 break;
             }
 

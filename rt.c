@@ -407,8 +407,8 @@ risp_object *load_module(risp_env *env, const char *mod_name) {
     lex_state_init(&state);
 
     lexer lex = {
-        .getc = &file_getc,
-        .ungetc = &file_ungetc,
+        .read_char = &file_getc,
+        .unread_char = &file_ungetc,
         .repl = false,
         .infile = mod_file,
         .in_name = path,
