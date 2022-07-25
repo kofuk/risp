@@ -243,7 +243,7 @@ static inline usize align_to_word(usize size) { return (size + sizeof(void *) - 
  * Note: This function can run GC.
  */
 static void ensure_allocatable(risp_env *env, usize size) {
-    if ((env->flags & FLAG_ALWAYS_GC) || env->heap_cap - env->heap_len >= size) {
+    if (!(env->flags & FLAG_ALWAYS_GC) && env->heap_cap - env->heap_len >= size) {
         return;
     }
 
